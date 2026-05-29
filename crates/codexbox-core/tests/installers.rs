@@ -48,7 +48,7 @@ fn windows_entrypoint_plan_can_request_owned_data_removal_without_shell_script()
 fn macos_bundle_metadata_contains_silent_and_manager_apps() {
     let options = InstallOptions {
         install_root: Some("/Applications".into()),
-        launcher_path: Some("/opt/CodexBox/codex-plus-plus".into()),
+        launcher_path: Some("/opt/CodexBox/codexbox".into()),
         manager_path: Some("/opt/CodexBox/codexbox-manager".into()),
         remove_owned_data: false,
     };
@@ -77,19 +77,19 @@ fn installer_exports_expected_two_entrypoint_names() {
 #[test]
 fn companion_binary_path_resolves_macos_silent_app_next_to_manager_app() {
     let manager_exe = std::path::Path::new(
-        "/Applications/CodexBox 管理工具.app/Contents/MacOS/CodexPlusPlusManager",
+        "/Applications/CodexBox 管理工具.app/Contents/MacOS/CodexBoxManager",
     );
 
     let companion = companion_binary_path_from_exe(manager_exe, SILENT_BINARY);
 
     assert_eq!(
         companion,
-        std::path::PathBuf::from("/Applications/CodexBox.app/Contents/MacOS/CodexPlusPlus")
+        std::path::PathBuf::from("/Applications/CodexBox.app/Contents/MacOS/CodexBox")
     );
     assert_ne!(
         companion,
         std::path::PathBuf::from(
-            "/Applications/CodexBox 管理工具.app/Contents/MacOS/codex-plus-plus"
+            "/Applications/CodexBox 管理工具.app/Contents/MacOS/codexbox"
         )
     );
 }

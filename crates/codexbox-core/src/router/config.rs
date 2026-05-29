@@ -56,6 +56,12 @@ pub struct SmartProvider {
     /// 标签列表
     #[serde(default)]
     pub tags: Vec<String>,
+    /// 是否支持图片/视觉输入
+    #[serde(default)]
+    pub supports_vision: bool,
+    /// 图片场景专用模型（为空则用原 model）
+    #[serde(default)]
+    pub vision_model: String,
     /// 健康检查配置
     #[serde(default)]
     pub health_check: HealthCheckConfig,
@@ -78,7 +84,7 @@ fn default_true() -> bool {
 }
 
 /// 供应商协议类型
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum ProviderProtocol {
     /// OpenAI Responses API (Codex 原生)

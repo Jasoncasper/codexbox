@@ -333,22 +333,6 @@ fn injection_script_rebuilds_upstream_options_for_each_project_branch_menu() {
 }
 
 #[test]
-fn manager_ui_exposes_pure_api_relay_mode_button() {
-    let repo = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .and_then(std::path::Path::parent)
-        .expect("core crate should live under crates/codex-plus-core");
-    let source = std::fs::read_to_string(repo.join("apps/codex-plus-manager/src/App.tsx")).unwrap();
-    let commands =
-        std::fs::read_to_string(repo.join("apps/codex-plus-manager/src-tauri/src/lib.rs")).unwrap();
-
-    assert!(source.contains("官方混入 API Key"));
-    assert!(source.contains("纯 API"));
-    assert!(source.contains("apply_pure_api_injection"));
-    assert!(commands.contains("commands::apply_pure_api_injection"));
-}
-
-#[test]
 fn cdp_target_deserializes_websocket_field() {
     let target: CdpTarget = serde_json::from_value(json!({
         "id": "page-1",

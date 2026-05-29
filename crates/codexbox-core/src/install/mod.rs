@@ -6,7 +6,7 @@ pub mod macos;
 pub mod windows;
 
 pub const SILENT_NAME: &str = "CodexBox";
-pub const MANAGER_NAME: &str = "CodexBox";
+pub const MANAGER_NAME: &str = "CodexBox 管理工具";
 pub const SILENT_BINARY: &str = "codexbox";
 pub const MANAGER_BINARY: &str = "codexbox-manager";
 

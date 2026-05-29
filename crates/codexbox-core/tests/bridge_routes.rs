@@ -20,7 +20,7 @@ async fn bridge_routes_cover_all_current_paths() {
 
     let cases = [
         ("/settings/get", json!({})),
-        ("/settings/set", json!({"providerSyncEnabled": true})),
+        ("/settings/set", json!({"enhancementsEnabled": true})),
         ("/user-scripts/list", json!({})),
         ("/user-scripts/set-enabled", json!({"enabled": false})),
         (
@@ -167,13 +167,13 @@ async fn settings_routes_use_settings_service() {
     let updated = handle_bridge_request(
         ctx.clone(),
         "/settings/set",
-        json!({"providerSyncEnabled": true, "cliWrapperApiKeyEnv": ""}),
+        json!({"enhancementsEnabled": true, "codexGoalsEnabled": false}),
     )
     .await;
     let loaded = handle_bridge_request(ctx, "/settings/get", json!({})).await;
 
-    assert_eq!(updated["providerSyncEnabled"], true);
-    assert_eq!(updated["cliWrapperApiKeyEnv"], "CUSTOM_OPENAI_API_KEY");
+    assert_eq!(updated["enhancementsEnabled"], true);
+    assert_eq!(updated["codexGoalsEnabled"], false);
     assert_eq!(loaded, updated);
 }
 
@@ -794,30 +794,11 @@ impl BridgeSettingsService for FakeSettings {
         let current = self.settings.lock().unwrap().clone();
         let mut raw = serde_json::to_value(current).unwrap();
         let raw = raw.as_object_mut().unwrap();
-        if let Some(value) = payload.get("providerSyncEnabled").and_then(Value::as_bool) {
-            raw.insert("providerSyncEnabled".to_string(), json!(value));
-        }
         if let Some(value) = payload.get("enhancementsEnabled").and_then(Value::as_bool) {
             raw.insert("enhancementsEnabled".to_string(), json!(value));
         }
-        if let Some(value) = payload.get("launchMode").and_then(Value::as_str) {
-            raw.insert("launchMode".to_string(), json!(value));
-        }
-        if let Some(value) = payload.get("relayBaseUrl").and_then(Value::as_str) {
-            raw.insert("relayBaseUrl".to_string(), json!(value));
-        }
-        if let Some(value) = payload.get("relayApiKey").and_then(Value::as_str) {
-            raw.insert("relayApiKey".to_string(), json!(value));
-        }
-        if let Some(value) = payload.get("cliWrapperApiKeyEnv").and_then(Value::as_str) {
-            raw.insert(
-                "cliWrapperApiKeyEnv".to_string(),
-                json!(if value.is_empty() {
-                    "CUSTOM_OPENAI_API_KEY"
-                } else {
-                    value
-                }),
-            );
+        if let Some(value) = payload.get("codexGoalsEnabled").and_then(Value::as_bool) {
+            raw.insert("codexGoalsEnabled".to_string(), json!(value));
         }
         let updated: BackendSettings = serde_json::from_value(Value::Object(raw.clone())).unwrap();
         *self.settings.lock().unwrap() = updated.clone();

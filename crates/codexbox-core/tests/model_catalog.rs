@@ -7,7 +7,7 @@ use std::thread;
 use codexbox_core::model_catalog::{
     read_codex_model_catalog, read_codex_model_catalog_from_home,
 };
-use codexbox_core::settings::{BackendSettings, RelayProfile, RelayProtocol, SettingsStore};
+use codexbox_core::settings::{BackendSettings, SettingsStore};
 use serde_json::json;
 
 #[tokio::test]
@@ -63,61 +63,6 @@ experimental_bearer_token = "relay-key"
     let requests = server.finish();
     assert_eq!(requests[0].path, "/v1/models");
     assert_eq!(requests[0].authorization, "Bearer relay-key");
-}
-
-#[tokio::test]
-async fn model_catalog_uses_active_relay_profile_model_list_for_display() {
-    let temp = tempfile::tempdir().unwrap();
-    let codex_home = temp.path().join("codex-home");
-    std::fs::create_dir_all(&codex_home).unwrap();
-    let settings_path = temp.path().join("settings.json");
-    let previous_codex_home = std::env::var_os("CODEX_HOME");
-    let previous_settings_path =
-        codexbox_core::paths::set_settings_path_for_tests(Some(settings_path.clone()));
-    unsafe {
-        std::env::set_var("CODEX_HOME", &codex_home);
-    }
-
-    let result = async {
-        SettingsStore::new(settings_path)
-            .save(&BackendSettings {
-                active_relay_id: "relay-a".to_string(),
-                relay_profiles: vec![RelayProfile {
-                    id: "relay-a".to_string(),
-                    name: "Relay A".to_string(),
-                    model: "qwen3-coder".to_string(),
-                    base_url: "https://example.test/v1".to_string(),
-                    protocol: RelayProtocol::Responses,
-                    model_list: "deepseek-coder\nqwen3-coder\nclaude-compatible".to_string(),
-                    ..RelayProfile::default()
-                }],
-                ..BackendSettings::default()
-            })
-            .unwrap();
-
-        read_codex_model_catalog().await
-    }
-    .await;
-
-    match previous_codex_home {
-        Some(value) => unsafe {
-            std::env::set_var("CODEX_HOME", value);
-        },
-        None => unsafe {
-            std::env::remove_var("CODEX_HOME");
-        },
-    }
-    codexbox_core::paths::set_settings_path_for_tests(previous_settings_path);
-
-    assert_eq!(result["status"], "ok");
-    assert_eq!(result["model_provider"], "relay-a");
-    assert_eq!(result["provider_name"], "Relay A");
-    assert_eq!(result["default_model"], "qwen3-coder");
-    assert_eq!(
-        result["models"],
-        json!(["qwen3-coder", "deepseek-coder", "claude-compatible"])
-    );
-    assert_eq!(result["sources"][0]["type"], "relay_profile_model_list");
 }
 
 #[tokio::test]

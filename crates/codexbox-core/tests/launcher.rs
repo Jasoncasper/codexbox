@@ -17,7 +17,7 @@ use codexbox_core::launcher::{
 use codexbox_core::launcher::{WindowsProcessControlStrategy, windows_process_control_strategy};
 use codexbox_core::ports::select_platform_loopback_port_with;
 use codexbox_core::proxy::has_proxy_environment;
-use codexbox_core::settings::{BackendSettings, RelayProfile, RelayProtocol};
+use codexbox_core::settings::BackendSettings;
 use codexbox_core::status::StatusStore;
 
 #[test]
@@ -473,10 +473,7 @@ async fn launch_lifecycle_runs_sync_before_launch_writes_success_and_shutdowns_o
     let status_store = StatusStore::new(temp.path().join("latest-status.json"));
     let events = Arc::new(Mutex::new(Vec::<String>::new()));
     let hooks = FakeHooks::new(events.clone())
-        .with_settings(BackendSettings {
-            provider_sync_enabled: true,
-            ..BackendSettings::default()
-        })
+        .with_settings(BackendSettings::default())
         .with_launch_result(CodexLaunch::Process {
             command: vec!["codex".to_string()],
             wait_strategy: codexbox_core::launcher::ProcessWaitStrategy::TrackedChild,
@@ -502,7 +499,6 @@ async fn launch_lifecycle_runs_sync_before_launch_writes_success_and_shutdowns_o
             "select-debug:9229",
             "select-helper:57321",
             "load-settings",
-            "provider-sync",
             "start-helper:57321",
             "launch:9229",
             "inject:9229:57321",
@@ -557,47 +553,6 @@ async fn launch_lifecycle_passes_configured_extra_args_to_codex_launch() {
 }
 
 #[tokio::test]
-async fn launch_lifecycle_keeps_js_injection_in_relay_mode() {
-    let temp = tempfile::tempdir().unwrap();
-    let app_dir = temp.path().join("Codex.app");
-    std::fs::create_dir_all(&app_dir).unwrap();
-    let status_store = StatusStore::new(temp.path().join("latest-status.json"));
-    let events = Arc::new(Mutex::new(Vec::<String>::new()));
-    let hooks = FakeHooks::new(events.clone()).with_settings(BackendSettings {
-        launch_mode: codexbox_core::settings::LaunchMode::Relay,
-        ..BackendSettings::default()
-    });
-
-    let handle = launch_and_inject_with_hooks(
-        LaunchOptions {
-            app_dir: Some(app_dir),
-            debug_port: 9229,
-            helper_port: 57321,
-            status_store,
-        },
-        &hooks,
-    )
-    .await
-    .unwrap();
-    handle.wait_for_codex_exit().await.unwrap();
-
-    assert_eq!(
-        *events.lock().unwrap(),
-        vec![
-            "select-debug:9229",
-            "select-helper:57321",
-            "load-settings",
-            "start-helper:57321",
-            "launch:9229",
-            "inject:9229:57321",
-            "status:running",
-            "wait-codex",
-            "shutdown-helper:57321",
-        ]
-    );
-}
-
-#[tokio::test]
 async fn launch_lifecycle_skips_helper_and_injection_when_enhancements_disabled() {
     let temp = tempfile::tempdir().unwrap();
     let app_dir = temp.path().join("Codex.app");
@@ -628,9 +583,11 @@ async fn launch_lifecycle_skips_helper_and_injection_when_enhancements_disabled(
             "select-debug:9229",
             "select-helper:57321",
             "load-settings",
+            "start-helper:57321",
             "launch:9229",
             "status:running",
             "wait-codex",
+            "shutdown-helper:57321",
         ]
     );
 }
@@ -643,87 +600,6 @@ async fn launch_lifecycle_does_not_apply_active_relay_profile_before_starting_co
     let status_store = StatusStore::new(temp.path().join("latest-status.json"));
     let events = Arc::new(Mutex::new(Vec::<String>::new()));
     let hooks = FakeHooks::new(events.clone());
-
-    let handle = launch_and_inject_with_hooks(
-        LaunchOptions {
-            app_dir: Some(app_dir),
-            debug_port: 9229,
-            helper_port: 57321,
-            status_store,
-        },
-        &hooks,
-    )
-    .await
-    .unwrap();
-    handle.wait_for_codex_exit().await.unwrap();
-
-    let events = events.lock().unwrap().clone();
-    assert!(!events.contains(&"apply-relay".to_string()));
-    assert!(events.contains(&"launch:9229".to_string()));
-}
-
-#[tokio::test]
-async fn launch_lifecycle_skips_active_relay_profile_when_supplier_config_disabled() {
-    let temp = tempfile::tempdir().unwrap();
-    let app_dir = temp.path().join("Codex.app");
-    std::fs::create_dir_all(&app_dir).unwrap();
-    let status_store = StatusStore::new(temp.path().join("latest-status.json"));
-    let events = Arc::new(Mutex::new(Vec::<String>::new()));
-    let hooks = FakeHooks::new(events.clone()).with_settings(BackendSettings {
-        relay_profiles_enabled: false,
-        ..BackendSettings::default()
-    });
-
-    let handle = launch_and_inject_with_hooks(
-        LaunchOptions {
-            app_dir: Some(app_dir),
-            debug_port: 9229,
-            helper_port: 57321,
-            status_store,
-        },
-        &hooks,
-    )
-    .await
-    .unwrap();
-    handle.wait_for_codex_exit().await.unwrap();
-
-    let events = events.lock().unwrap().clone();
-    assert!(!events.contains(&"apply-relay".to_string()));
-    assert!(events.contains(&"launch:9229".to_string()));
-}
-
-#[tokio::test]
-async fn launch_lifecycle_tolerates_duplicate_context_parent_tables_before_applying_relay() {
-    let temp = tempfile::tempdir().unwrap();
-    let app_dir = temp.path().join("Codex.app");
-    std::fs::create_dir_all(&app_dir).unwrap();
-    let status_store = StatusStore::new(temp.path().join("latest-status.json"));
-    let events = Arc::new(Mutex::new(Vec::<String>::new()));
-    let hooks = FakeHooks::new(events.clone()).with_settings(BackendSettings {
-        relay_common_config_contents: "[mcp_servers]\n".to_string(),
-        relay_context_config_contents: "[mcp_servers]\n\n[mcp_servers.ida]\ncommand = \"python\"\n"
-            .to_string(),
-        relay_profiles: vec![RelayProfile {
-            id: "relay-a".to_string(),
-            name: "Relay A".to_string(),
-            relay_mode: codexbox_core::settings::RelayMode::PureApi,
-            config_contents: r#"model = "gpt-5.5"
-model_provider = "custom"
-
-[model_providers.custom]
-name = "custom"
-wire_api = "responses"
-requires_openai_auth = true
-base_url = "https://relay.example/v1"
-experimental_bearer_token = "sk-test"
-"#
-            .to_string(),
-            auth_contents: r#"{"OPENAI_API_KEY":"sk-test"}"#.to_string(),
-            ..RelayProfile::default()
-        }],
-        active_relay_id: "relay-a".to_string(),
-        ..BackendSettings::default()
-    });
 
     let handle = launch_and_inject_with_hooks(
         LaunchOptions {
@@ -818,66 +694,6 @@ async fn launch_lifecycle_cleans_helper_when_launch_fails_after_helper_started()
             "status:failed",
         ]
     );
-}
-
-#[tokio::test]
-async fn launch_starts_helper_when_chat_protocol_proxy_is_enabled() {
-    let temp = tempfile::tempdir().unwrap();
-    let app_dir = temp.path().join("Codex.app");
-    std::fs::create_dir_all(&app_dir).unwrap();
-    let status_store = StatusStore::new(temp.path().join("latest-status.json"));
-    let events = Arc::new(Mutex::new(Vec::<String>::new()));
-    let settings = BackendSettings {
-        enhancements_enabled: false,
-        relay_profiles: vec![RelayProfile {
-            id: "relay-chat".to_string(),
-            linked_ccs_provider_id: String::new(),
-            name: "Chat".to_string(),
-            model: String::new(),
-            base_url: "https://chat-only.example.test/v1".to_string(),
-            upstream_base_url: "https://chat-only.example.test/v1".to_string(),
-            api_key: "sk-test".to_string(),
-            protocol: RelayProtocol::ChatCompletions,
-            relay_mode: codexbox_core::settings::RelayMode::MixedApi,
-            official_mix_api_key: false,
-            test_model: String::new(),
-            config_contents: String::new(),
-            auth_contents: String::new(),
-            use_common_config: true,
-            context_selection: codexbox_core::settings::RelayContextSelection::default(),
-            context_selection_initialized: false,
-            context_window: String::new(),
-            auto_compact_limit: String::new(),
-            model_insert_mode: codexbox_core::settings::RelayModelInsertMode::default(),
-            model_list: String::new(),
-        }],
-        active_relay_id: "relay-chat".to_string(),
-        ..BackendSettings::default()
-    };
-    let hooks = FakeHooks::new(events.clone()).with_settings(settings);
-
-    let handle = launch_and_inject_with_hooks(
-        LaunchOptions {
-            app_dir: Some(app_dir),
-            debug_port: 9229,
-            helper_port: 58000,
-            status_store,
-        },
-        &hooks,
-    )
-    .await
-    .unwrap();
-
-    let before_stop = events.lock().unwrap().clone();
-    assert!(before_stop.contains(&"select-helper:58000".to_string()));
-    assert!(before_stop.contains(&"start-helper:57321".to_string()));
-    assert!(!before_stop.contains(&"inject:9229:57321".to_string()));
-
-    handle.wait_for_codex_exit().await.unwrap();
-
-    let after_stop = events.lock().unwrap().clone();
-    assert!(after_stop.contains(&"wait-codex".to_string()));
-    assert!(after_stop.contains(&"shutdown-helper:57321".to_string()));
 }
 
 #[tokio::test]

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
+  Image,
   Network,
   Plus,
   Save,
@@ -35,6 +36,8 @@ interface SmartProvider {
   priority: number;
   weight: number;
   enabled: boolean;
+  supports_vision: boolean;
+  vision_model: string;
   tags: string[];
   health_check: { enabled: boolean; interval_secs: number; timeout_secs: number; endpoint: string };
   rate_limit: { requests_per_minute: number; tokens_per_minute: number };
@@ -161,6 +164,8 @@ export default function RoutingPage() {
       priority: 100,
       weight: 100,
       enabled: true,
+      supports_vision: false,
+      vision_model: "",
       tags: [],
       health_check: { enabled: true, interval_secs: 60, timeout_secs: 5, endpoint: "/v1/models" },
       rate_limit: { requests_per_minute: 60, tokens_per_minute: 100000 },
@@ -349,6 +354,27 @@ export default function RoutingPage() {
                         className="h-8 text-sm"
                       />
                     </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <label className="flex items-center gap-2 text-sm cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={provider.supports_vision}
+                        onChange={(e) => updateProvider(index, { supports_vision: e.target.checked })}
+                      />
+                      <Image className="h-4 w-4" /> 支持图片/视觉
+                    </label>
+                    {provider.supports_vision ? (
+                      <div className="flex-1">
+                        <Label className="text-xs">图片专用模型 (可选)</Label>
+                        <Input
+                          value={provider.vision_model}
+                          onChange={(e) => updateProvider(index, { vision_model: e.target.value })}
+                          placeholder="留空则用原模型，例如 gpt-4o"
+                          className="h-8 text-sm"
+                        />
+                      </div>
+                    ) : null}
                   </div>
                 </CardContent>
               </Card>

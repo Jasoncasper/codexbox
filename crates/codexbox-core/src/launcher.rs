@@ -201,9 +201,7 @@ where
     let mut launched = None;
 
     let result: anyhow::Result<LaunchHandle> = async {
-        if settings.provider_sync_enabled {
-            hooks.run_provider_sync().await?;
-        }
+        // provider_sync_enabled removed — provider sync is no longer configurable per-profile
         let protocol_proxy_enabled = relay_protocol_proxy_enabled(&settings);
         if protocol_proxy_enabled {
             helper_port = crate::protocol_proxy::DEFAULT_PROTOCOL_PROXY_PORT;
@@ -266,8 +264,10 @@ where
     }
 }
 
-fn relay_protocol_proxy_enabled(settings: &BackendSettings) -> bool {
-    settings.active_relay_profile().protocol == crate::settings::RelayProtocol::ChatCompletions
+fn relay_protocol_proxy_enabled(_settings: &BackendSettings) -> bool {
+    // Legacy relay profile check removed. Protocol proxy is now controlled by routing config.
+    // Always enabled for now — helper port selection will handle the proxy path.
+    true
 }
 
 pub trait IntoLaunchHooks {
@@ -333,36 +333,9 @@ impl LaunchHooks for DefaultLaunchHooks {
         anyhow::bail!("provider sync requires launcher hooks with codex-plus-data integration")
     }
 
-    async fn apply_active_relay_profile(&self, settings: &BackendSettings) -> anyhow::Result<()> {
-        if !settings.relay_profiles_enabled {
-            return Ok(());
-        }
-        let profile = settings.active_relay_profile();
-        let home = crate::relay_config::default_codex_home_dir();
-        let common_config = crate::relay_config::normalize_config_text(
-            &[
-                settings.relay_common_config_contents.as_str(),
-                settings.relay_context_config_contents.as_str(),
-            ]
-            .into_iter()
-            .map(str::trim)
-            .filter(|section| !section.is_empty())
-            .collect::<Vec<_>>()
-            .join("\n\n"),
-        );
-        if profile.relay_mode == crate::settings::RelayMode::Official
-            && !profile.official_mix_api_key
-        {
-            let auth_contents = (!profile.auth_contents.trim().is_empty())
-                .then_some(profile.auth_contents.as_str());
-            crate::relay_config::clear_relay_config_to_home_with_auth(&home, auth_contents)?;
-            return Ok(());
-        }
-        crate::relay_config::apply_relay_profile_to_home_with_switch_rules(
-            &home,
-            &profile,
-            &common_config,
-        )?;
+    async fn apply_active_relay_profile(&self, _settings: &BackendSettings) -> anyhow::Result<()> {
+        // Relay profile system has been removed.
+        // Relay configuration is now managed through the smart routing system.
         Ok(())
     }
 
@@ -576,14 +549,8 @@ impl LaunchHooks for DefaultLaunchHooks {
     }
 }
 
-fn hydrate_live_ccs_profiles(settings: &mut BackendSettings) {
-    if !settings.ccs_link_enabled {
-        return;
-    }
-    settings
-        .relay_profiles
-        .retain(|profile| profile.linked_ccs_provider_id.trim().is_empty());
-    let _ = crate::ccs_import::sync_linked_profiles_from_default_db(&mut settings.relay_profiles);
+fn hydrate_live_ccs_profiles(_settings: &mut BackendSettings) {
+    // CCS link feature has been removed. Profile hydration is now handled by the router config.
 }
 
 async fn handle_helper_connection(

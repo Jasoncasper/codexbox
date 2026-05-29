@@ -99,10 +99,13 @@ impl RouterEngine {
                             continue;
                         }
 
+                        let providers =
+                            self.apply_image_routing(request, &providers);
                         let selected = self.select_provider(strategy, &providers).await?;
 
-                        let target_model =
-                            self.resolve_model(&request.model, &selected, &config.model_mappings);
+                        let target_model = self.vision_model_for(&selected).unwrap_or_else(|| {
+                            self.resolve_model(&request.model, &selected, &config.model_mappings)
+                        });
 
                         self.metrics.record_route(&rule.name, &selected.id).await;
 
@@ -144,16 +147,52 @@ impl RouterEngine {
             anyhow::bail!("No healthy providers available");
         }
 
-        let selected = self.select_provider(&config.strategy, &all_providers).await?;
+        let providers = self.apply_image_routing(request, &all_providers);
+        if providers.is_empty() {
+            self.metrics.record_error().await;
+            anyhow::bail!("No healthy providers available for this request type");
+        }
+        let selected = self.select_provider(&config.strategy, &providers).await?;
+
+        let target_model = self.vision_model_for(&selected).unwrap_or_else(|| request.model.clone());
 
         self.metrics.record_route("default", &selected.id).await;
 
         Ok(RouteDecision {
             provider: selected,
-            target_model: request.model.clone(),
+            target_model,
             rule_name: "default".to_string(),
             strategy_used: config.strategy.clone(),
         })
+    }
+
+    /// 图片场景过滤：当请求有图片时，只保留支持视觉的供应商；
+    /// 无图片时正常返回全部。
+    fn apply_image_routing(
+        &self,
+        request: &RequestContext,
+        providers: &[SmartProvider],
+    ) -> Vec<SmartProvider> {
+        if !request.has_image {
+            return providers.to_vec();
+        }
+        let vision_providers: Vec<SmartProvider> = providers
+            .iter()
+            .filter(|p| p.supports_vision)
+            .cloned()
+            .collect();
+        if vision_providers.is_empty() {
+            return providers.to_vec();
+        }
+        vision_providers
+    }
+
+    /// 如果供应商配了 vision_model 且当前请求有图片，返回它
+    fn vision_model_for(&self, provider: &SmartProvider) -> Option<String> {
+        if !provider.supports_vision || provider.vision_model.is_empty() {
+            return None;
+        }
+        Some(provider.vision_model.clone())
     }
 
     /// 选择供应商（根据策略）

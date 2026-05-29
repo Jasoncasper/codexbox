@@ -5,7 +5,9 @@ use super::{
     install_root_or_default, option_or_current_exe,
 };
 
+#[allow(dead_code)]
 const UNINSTALL_SUBKEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Uninstall\CodexBox";
+#[allow(dead_code)]
 const LEGACY_UNINSTALL_SUBKEY: &str =
     r"Software\Microsoft\Windows\CurrentVersion\Uninstall\CodexBox";
 

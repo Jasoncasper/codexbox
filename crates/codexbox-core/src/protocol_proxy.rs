@@ -7,7 +7,6 @@ use std::collections::BTreeSet;
 
 use serde_json::{Value, json};
 
-use crate::settings::{RelayProtocol, SettingsStore};
 
 pub const DEFAULT_PROTOCOL_PROXY_PORT: u16 = 57321;
 const THINK_OPEN_TAG: &str = "<think>";
@@ -393,16 +392,26 @@ pub fn is_models_proxy_path(path: &str) -> bool {
     matches!(path, "/models" | "/v1/models")
 }
 
-pub async fn open_responses_proxy_request(body: &str) -> anyhow::Result<UpstreamProxyResponse> {
-    let settings = SettingsStore::default().load().unwrap_or_default();
-    let relay = settings.active_relay_profile();
-    if relay.protocol != RelayProtocol::ChatCompletions {
-        anyhow::bail!("当前中转未启用 Chat Completions 协议代理");
+fn load_default_router_provider() -> anyhow::Result<crate::router::config::SmartProvider> {
+    let config_path = crate::paths::default_app_state_dir().join("routing.toml");
+    if config_path.exists() {
+        if let Ok(contents) = std::fs::read_to_string(&config_path) {
+            if let Ok(config) = toml::from_str::<crate::router::config::SmartRouterConfig>(&contents) {
+                if let Some(provider) = config.providers.iter().find(|p| p.enabled) {
+                    return Ok(provider.clone());
+                }
+            }
+        }
     }
-    if relay.base_url.trim().is_empty() {
+    anyhow::bail!("未配置智能路由供应商，请在路由配置中添加至少一个启用的供应商")
+}
+
+pub async fn open_responses_proxy_request(body: &str) -> anyhow::Result<UpstreamProxyResponse> {
+    let provider = load_default_router_provider()?;
+    if provider.base_url.trim().is_empty() {
         anyhow::bail!("Chat Completions 上游 Base URL 不能为空");
     }
-    if relay.api_key.trim().is_empty() {
+    if provider.api_key.trim().is_empty() {
         anyhow::bail!("Chat Completions 上游 Key 不能为空");
     }
 
@@ -413,8 +422,8 @@ pub async fn open_responses_proxy_request(body: &str) -> anyhow::Result<Upstream
         .unwrap_or(false);
     let chat_request = responses_to_chat_completions(request_json.clone())?;
     let upstream = reqwest::Client::new()
-        .post(chat_completions_url(&relay.base_url))
-        .bearer_auth(relay.api_key.trim())
+        .post(chat_completions_url(&provider.base_url))
+        .bearer_auth(provider.api_key.trim())
         .header(reqwest::header::CONTENT_TYPE, "application/json")
         .json(&chat_request)
         .send()
@@ -436,21 +445,17 @@ pub async fn open_responses_proxy_request(body: &str) -> anyhow::Result<Upstream
 }
 
 pub async fn open_models_proxy_request() -> anyhow::Result<UpstreamProxyResponse> {
-    let settings = SettingsStore::default().load().unwrap_or_default();
-    let relay = settings.active_relay_profile();
-    if relay.protocol != RelayProtocol::ChatCompletions {
-        anyhow::bail!("当前中转未启用 Chat Completions 协议代理");
-    }
-    if relay.base_url.trim().is_empty() {
+    let provider = load_default_router_provider()?;
+    if provider.base_url.trim().is_empty() {
         anyhow::bail!("Chat Completions 上游 Base URL 不能为空");
     }
-    if relay.api_key.trim().is_empty() {
+    if provider.api_key.trim().is_empty() {
         anyhow::bail!("Chat Completions 上游 Key 不能为空");
     }
 
     let upstream = reqwest::Client::new()
-        .get(models_url(&relay.base_url))
-        .bearer_auth(relay.api_key.trim())
+        .get(models_url(&provider.base_url))
+        .bearer_auth(provider.api_key.trim())
         .send()
         .await?;
     let status_code = upstream.status().as_u16();
@@ -604,29 +609,12 @@ pub async fn open_routed_proxy_request(body: &str) -> anyhow::Result<(UpstreamPr
         let router = crate::router::engine::RouterEngine::load_from_file(&router_config_path)?;
         router.route(&context).await?
     } else {
-        // 回退到原始行为
-        let settings = SettingsStore::default().load().unwrap_or_default();
-        let relay = settings.active_relay_profile();
-        if relay.protocol != RelayProtocol::ChatCompletions {
-            anyhow::bail!("当前中转未启用 Chat Completions 协议代理");
-        }
+        // 回退：从路由配置文件加载默认供应商
+        let provider = load_default_router_provider()?;
         crate::router::engine::RouteDecision {
-            provider: crate::router::config::SmartProvider {
-                id: "default".to_string(),
-                name: relay.name.clone(),
-                base_url: relay.base_url.clone(),
-                api_key: relay.api_key.clone(),
-                protocol: crate::router::config::ProviderProtocol::ChatCompletions,
-                priority: 100,
-                weight: 100,
-                enabled: true,
-                tags: Vec::new(),
-                health_check: Default::default(),
-                rate_limit: Default::default(),
-                cost: Default::default(),
-            },
+            provider,
             target_model: context.model.clone(),
-            rule_name: "legacy".to_string(),
+            rule_name: "default".to_string(),
             strategy_used: crate::router::config::RoutingStrategy::Priority,
         }
     };
