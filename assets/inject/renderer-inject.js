@@ -1844,7 +1844,7 @@
       }
       const issueButton = target?.closest("[data-codex-plus-issue]");
       if (issueButton) {
-        const issueUrl = "https://github.com/BigPizzaV3/CodexPlusPlus/issues";
+        const issueUrl = "https://github.com/Jasoncasper/codexbox/issues";
         window.open(issueUrl, "_blank");
         return;
       }
