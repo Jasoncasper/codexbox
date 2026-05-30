@@ -13,16 +13,12 @@ use super::{
 pub fn build_app_bundle(options: &InstallOptions, manager: bool) -> MacosAppBundle {
     let install_root = install_root_or_default(options);
     let display_name = if manager { MANAGER_NAME } else { SILENT_NAME };
-    let executable_name = if manager {
-        "CodexBoxManager"
-    } else {
-        "CodexBox"
-    };
     let binary = if manager {
         MANAGER_BINARY
     } else {
         SILENT_BINARY
     };
+    let executable_name = binary;
     let target = option_or_current_exe(
         if manager {
             &options.manager_path
@@ -104,7 +100,7 @@ fn executable_name_from_plist(plist: &str) -> String {
         .nth(1)
         .and_then(|tail| tail.split("<string>").nth(1))
         .and_then(|tail| tail.split("</string>").next())
-        .unwrap_or("CodexBox")
+        .unwrap_or(SILENT_BINARY)
         .to_string()
 }
 

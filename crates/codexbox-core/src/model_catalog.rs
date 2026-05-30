@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
-use crate::router::config::SmartProvider;
+use crate::router::config::{SmartProvider, SmartRouterConfig};
 use serde_json::{Value, json};
 
 const BASE_URL_ENV_KEYS: &[&str] = &[
@@ -105,19 +105,44 @@ pub async fn read_codex_model_catalog_from_home(
             }
         }
     }
-
     let mut source_statuses = Vec::new();
     let mut models = Vec::new();
-    for source in sources.iter() {
-        let (source_models, mut source_status) = fetch_models_from_source(&client, source).await;
-        source_status["responses_api"] = responses_api_status("unknown", "", "");
-        models.extend(source_models);
-        source_statuses.push(source_status);
+
+    // 从 routing.toml 直接注入模型名（不去上游拉取全量列表）
+    let router_config_path = crate::paths::default_app_state_dir().join("routing.toml");
+    let mut router_models = Vec::new();
+    if let Ok(contents) = std::fs::read_to_string(&router_config_path) {
+        if let Ok(router_config) = toml::from_str::<SmartRouterConfig>(&contents) {
+            for provider in &router_config.providers {
+                if provider.enabled && !provider.id.trim().is_empty() {
+                    router_models.push(provider.id.trim().to_string());
+                }
+            }
+        }
     }
-    let (catalog_models, catalog_status) = models_from_config_model_catalog_json(home, &effective);
-    models.extend(catalog_models);
-    if let Some(status) = catalog_status {
-        source_statuses.push(status);
+    // 如果 routing.toml 里有模型，就用这些，不去上游拉取全量列表
+    if !router_models.is_empty() {
+        models = unique_strings(router_models);
+        source_statuses.push(json!({
+            "id": "config:routing",
+            "type": "routing_toml",
+            "name": "Routing config",
+            "status": "ok",
+            "models": models.len(),
+            "responses_api": responses_api_status("unknown", "", "")
+        }));
+    } else {
+        for source in sources.iter() {
+            let (source_models, mut source_status) = fetch_models_from_source(&client, source).await;
+            source_status["responses_api"] = responses_api_status("unknown", "", "");
+            models.extend(source_models);
+            source_statuses.push(source_status);
+        }
+        let (catalog_models, catalog_status) = models_from_config_model_catalog_json(home, &effective);
+        models.extend(catalog_models);
+        if let Some(status) = catalog_status {
+            source_statuses.push(status);
+        }
     }
 
     models = unique_strings(models);

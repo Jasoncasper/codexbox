@@ -12,8 +12,8 @@ fn default_ad_urls_match_legacy_helper_sources() {
     assert_eq!(
         DEFAULT_AD_LIST_URLS,
         [
-            "https://raw.githubusercontent.com/BigPizzaV3/Ad-List/main/ads.json",
-            "https://cdn.jsdelivr.net/gh/BigPizzaV3/Ad-List@main/ads.json",
+            "https://raw.githubusercontent.com/Jasoncasper/Ad-List/main/ads.json",
+            "https://cdn.jsdelivr.net/gh/Jasoncasper/Ad-List@main/ads.json",
         ]
     );
 }

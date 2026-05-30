@@ -139,6 +139,8 @@ pub fn run() {
             commands::delete_context_entry,
             commands::load_routing_config,
             commands::save_routing_config,
+            commands::upsert_provider,
+            commands::delete_provider,
             commands::test_routing_decision,
             commands::test_smart_provider
         ])
@@ -153,7 +155,7 @@ pub fn run() {
     }
 }
 
-fn install_panic_logger() {
+pub fn install_panic_logger() {
     std::panic::set_hook(Box::new(|panic_info| {
         let payload = panic_info
             .payload()

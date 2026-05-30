@@ -15,6 +15,7 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow.workspace = true
+tokio.workspace = true
 async-trait = "0.1"
 codexbox-core = { path = "../../../crates/codexbox-core" }
 codexbox-data = { path = "../../../crates/codexbox-data" }

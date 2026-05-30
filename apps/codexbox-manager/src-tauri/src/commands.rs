@@ -345,10 +345,27 @@ pub async fn refresh_script_market() -> CommandResult<ScriptMarketPayload> {
             "脚本市场已刷新。",
             script_market_payload_from_manifest(&manifest, "ok", "脚本市场已刷新。"),
         ),
-        Err(error) => failed(
-            &format!("脚本市场加载失败：{error}"),
-            failed_script_market_payload(&format!("脚本市场加载失败：{error}")),
-        ),
+        Err(error) => {
+            let msg = format!("{error}");
+            let status = if msg.contains("404") || msg.contains("error status") {
+                "empty"
+            } else {
+                "failed"
+            };
+            ok(
+                "暂无脚本市场",
+                ScriptMarketPayload {
+                    market: json!({
+                        "status": status,
+                        "message": "暂无可用脚本市场",
+                        "indexUrl": script_market::DEFAULT_MARKET_INDEX_URL,
+                        "updatedAt": "",
+                        "scripts": []
+                    }),
+                    user_scripts: user_script_inventory(),
+                },
+            )
+        }
     }
 }
 
@@ -364,10 +381,19 @@ pub async fn install_market_script(id: String) -> CommandResult<ScriptMarketPayl
     let manifest =
         match script_market::fetch_market_manifest(script_market::DEFAULT_MARKET_INDEX_URL).await {
             Ok(manifest) => manifest,
-            Err(error) => {
-                return failed(
-                    &format!("脚本市场加载失败：{error}"),
-                    failed_script_market_payload(&format!("脚本市场加载失败：{error}")),
+            Err(_error) => {
+                return ok(
+                    "暂无脚本市场",
+                    ScriptMarketPayload {
+                        market: json!({
+                            "status": "empty",
+                            "message": "暂无可用脚本市场",
+                            "indexUrl": script_market::DEFAULT_MARKET_INDEX_URL,
+                            "updatedAt": "",
+                            "scripts": []
+                        }),
+                        user_scripts: user_script_inventory(),
+                    },
                 );
             }
         };
@@ -1180,7 +1206,6 @@ pub struct RouteTestPayload {
     pub provider_name: String,
     pub target_model: String,
     pub rule_name: String,
-    pub strategy: String,
 }
 
 #[tauri::command]
@@ -1250,13 +1275,93 @@ pub async fn test_routing_decision(
                 provider_name: decision.provider.name,
                 target_model: decision.target_model,
                 rule_name: decision.rule_name,
-                strategy: format!("{:?}", decision.strategy_used),
             },
         },
         Err(e) => CommandResult {
             status: "failed".to_string(),
             message: format!("路由决策失败: {}", e),
-            payload: RouteTestPayload { provider_id: String::new(), provider_name: String::new(), target_model: String::new(), rule_name: String::new(), strategy: String::new() },
+            payload: RouteTestPayload { provider_id: String::new(), provider_name: String::new(), target_model: String::new(), rule_name: String::new() },
+        },
+    }
+}
+
+#[tauri::command]
+pub fn upsert_provider(provider: codexbox_core::router::SmartProvider) -> CommandResult<RoutingConfigPayload> {
+    let config_path = codexbox_core::paths::default_app_state_dir().join("routing.toml");
+    let mut config: codexbox_core::router::SmartRouterConfig = if config_path.exists() {
+        std::fs::read_to_string(&config_path)
+            .ok()
+            .and_then(|c| toml::from_str(&c).ok())
+            .unwrap_or_default()
+    } else {
+        codexbox_core::router::SmartRouterConfig::default()
+    };
+    if let Some(existing) = config.providers.iter_mut().find(|p| p.id == provider.id) {
+        *existing = provider;
+    } else {
+        config.providers.push(provider);
+    }
+    if let Some(parent) = config_path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let toml_content = match toml::to_string_pretty(&config) {
+        Ok(c) => c,
+        Err(e) => return CommandResult {
+            status: "failed".to_string(),
+            message: format!("序列化配置失败: {}", e),
+            payload: RoutingConfigPayload { config, config_path: config_path.to_string_lossy().to_string() },
+        },
+    };
+    match std::fs::write(&config_path, &toml_content) {
+        Ok(_) => CommandResult {
+            status: "ok".to_string(),
+            message: "模型保存成功".to_string(),
+            payload: RoutingConfigPayload { config, config_path: config_path.to_string_lossy().to_string() },
+        },
+        Err(e) => CommandResult {
+            status: "failed".to_string(),
+            message: format!("保存配置失败: {}", e),
+            payload: RoutingConfigPayload { config, config_path: config_path.to_string_lossy().to_string() },
+        },
+    }
+}
+
+#[tauri::command]
+pub fn delete_provider(provider_id: String) -> CommandResult<RoutingConfigPayload> {
+    let config_path = codexbox_core::paths::default_app_state_dir().join("routing.toml");
+    let mut config: codexbox_core::router::SmartRouterConfig = if config_path.exists() {
+        std::fs::read_to_string(&config_path)
+            .ok()
+            .and_then(|c| toml::from_str(&c).ok())
+            .unwrap_or_default()
+    } else {
+        codexbox_core::router::SmartRouterConfig::default()
+    };
+    config.providers.retain(|p| p.id != provider_id);
+    if config.vision_fallback_model == provider_id {
+        config.vision_fallback_model = String::new();
+    }
+    if let Some(parent) = config_path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let toml_content = match toml::to_string_pretty(&config) {
+        Ok(c) => c,
+        Err(e) => return CommandResult {
+            status: "failed".to_string(),
+            message: format!("序列化配置失败: {}", e),
+            payload: RoutingConfigPayload { config, config_path: config_path.to_string_lossy().to_string() },
+        },
+    };
+    match std::fs::write(&config_path, &toml_content) {
+        Ok(_) => CommandResult {
+            status: "ok".to_string(),
+            message: "模型已删除".to_string(),
+            payload: RoutingConfigPayload { config, config_path: config_path.to_string_lossy().to_string() },
+        },
+        Err(e) => CommandResult {
+            status: "failed".to_string(),
+            message: format!("删除配置失败: {}", e),
+            payload: RoutingConfigPayload { config, config_path: config_path.to_string_lossy().to_string() },
         },
     }
 }
@@ -1272,7 +1377,7 @@ pub async fn test_smart_provider(provider: codexbox_core::router::SmartProvider)
             payload: RelayProfileTestPayload { http_status: 0, endpoint: String::new(), response_preview: String::new() },
         };
     }
-    let test_url = format!("{}/v1/models", base_url.trim_end_matches('/'));
+    let test_url = codexbox_core::protocol_proxy::models_url_with(&base_url, provider.use_full_url);
     let client = reqwest::Client::new();
     match client.get(&test_url).bearer_auth(&api_key).timeout(std::time::Duration::from_secs(10)).send().await {
         Ok(response) => {

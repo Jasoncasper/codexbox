@@ -270,7 +270,9 @@ pub struct UpstreamProxyResponse {
     pub status_code: u16,
     pub content_type: String,
     pub is_stream: bool,
-    pub response: reqwest::Response,
+    pub response: Option<reqwest::Response>,
+    /// 直接提供的响应体，用于不走上游的场景
+    pub body: Option<Vec<u8>>,
 }
 
 impl UpstreamProxyResponse {
@@ -422,7 +424,7 @@ pub async fn open_responses_proxy_request(body: &str) -> anyhow::Result<Upstream
         .unwrap_or(false);
     let chat_request = responses_to_chat_completions(request_json.clone())?;
     let upstream = reqwest::Client::new()
-        .post(chat_completions_url(&provider.base_url))
+        .post(chat_completions_url_with(&provider.base_url, provider.use_full_url))
         .bearer_auth(provider.api_key.trim())
         .header(reqwest::header::CONTENT_TYPE, "application/json")
         .json(&chat_request)
@@ -440,37 +442,83 @@ pub async fn open_responses_proxy_request(body: &str) -> anyhow::Result<Upstream
         status_code,
         is_stream: is_stream || content_type.contains("text/event-stream"),
         content_type,
-        response: upstream,
+        response: Some(upstream),
+        body: None,
     })
 }
 
 pub async fn open_models_proxy_request() -> anyhow::Result<UpstreamProxyResponse> {
-    let provider = load_default_router_provider()?;
-    if provider.base_url.trim().is_empty() {
-        anyhow::bail!("Chat Completions 上游 Base URL 不能为空");
+    // 从 routing.toml 加载已配置的模型列表，不去上游拉取全量
+    let config_path = crate::paths::default_app_state_dir().join("routing.toml");
+    let mut model_ids: Vec<String> = Vec::new();
+    if config_path.exists() {
+        if let Ok(contents) = std::fs::read_to_string(&config_path) {
+            if let Ok(config) = toml::from_str::<crate::router::config::SmartRouterConfig>(&contents) {
+                model_ids = config
+                    .providers
+                    .iter()
+                    .filter(|p| p.enabled && !p.id.trim().is_empty())
+                    .map(|p| p.id.trim().to_string())
+                    .collect();
+            }
+        }
     }
-    if provider.api_key.trim().is_empty() {
-        anyhow::bail!("Chat Completions 上游 Key 不能为空");
+    if model_ids.is_empty() {
+        // 回退：路由没配模型时走上游
+        let provider = load_default_router_provider()?;
+        if provider.base_url.trim().is_empty() {
+            anyhow::bail!("Chat Completions 上游 Base URL 不能为空");
+        }
+        if provider.api_key.trim().is_empty() {
+            anyhow::bail!("Chat Completions 上游 Key 不能为空");
+        }
+        let upstream = reqwest::Client::new()
+            .get(models_url_with(&provider.base_url, provider.use_full_url))
+            .bearer_auth(provider.api_key.trim())
+            .send()
+            .await?;
+        let status_code = upstream.status().as_u16();
+        let content_type = upstream
+            .headers()
+            .get(reqwest::header::CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or("application/json; charset=utf-8")
+            .to_string();
+        return Ok(UpstreamProxyResponse {
+            status_code,
+            is_stream: false,
+            content_type,
+            response: Some(upstream),
+            body: None,
+        });
     }
 
-    let upstream = reqwest::Client::new()
-        .get(models_url(&provider.base_url))
-        .bearer_auth(provider.api_key.trim())
-        .send()
-        .await?;
-    let status_code = upstream.status().as_u16();
-    let content_type = upstream
-        .headers()
-        .get(reqwest::header::CONTENT_TYPE)
-        .and_then(|value| value.to_str().ok())
-        .unwrap_or("application/json; charset=utf-8")
-        .to_string();
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let data: Vec<Value> = model_ids
+        .iter()
+        .map(|id| {
+            json!({
+                "id": id,
+                "object": "model",
+                "created": now,
+                "owned_by": "codexbox"
+            })
+        })
+        .collect();
+    let body_json = json!({
+        "object": "list",
+        "data": data
+    });
 
     Ok(UpstreamProxyResponse {
-        status_code,
+        status_code: 200,
         is_stream: false,
-        content_type,
-        response: upstream,
+        content_type: "application/json; charset=utf-8".to_string(),
+        response: None,
+        body: Some(body_json.to_string().into_bytes()),
     })
 }
 
@@ -480,7 +528,13 @@ pub async fn handle_responses_proxy_request(body: &str) -> anyhow::Result<ProxyH
     let status_code = upstream.status_code;
     let upstream_content_type = upstream.content_type.clone();
     let is_stream = upstream.is_stream;
-    let upstream_body = upstream.response.bytes().await?;
+    let upstream_body = if let Some(body) = upstream.body {
+        body
+    } else if let Some(response) = upstream.response {
+        response.bytes().await?.to_vec()
+    } else {
+        anyhow::bail!("missing response body")
+    };
 
     if !(200..300).contains(&status_code) {
         return Ok(ProxyHttpResponse {
@@ -514,16 +568,14 @@ pub async fn handle_responses_proxy_request(body: &str) -> anyhow::Result<ProxyH
 
 
 /// 从请求体中提取请求上下文（用于路由决策）
-pub fn extract_request_context(request_json: &Value) -> crate::router::config::RequestContext {
-    use crate::router::config::{RequestContext, RequestPriority, RequestType};
-    
+pub fn extract_request_context(request_json: &Value) -> crate::router::RequestContext {
     let model = request_json
         .get("model")
         .and_then(Value::as_str)
         .unwrap_or("")
         .to_string();
-    
-    // 检测请求类型
+
+    // 检测图片内容
     let has_image = if let Some(input) = request_json.get("input") {
         detect_image_content(input)
     } else if let Some(messages) = request_json.get("messages").and_then(Value::as_array) {
@@ -531,32 +583,16 @@ pub fn extract_request_context(request_json: &Value) -> crate::router::config::R
     } else {
         false
     };
-    
+
     let has_tools = request_json
         .get("tools")
         .and_then(Value::as_array)
         .map_or(false, |t| !t.is_empty());
-    
-    let request_type = if has_image {
-        RequestType::Image
-    } else if model.contains("code") || model.contains("codex") {
-        RequestType::Code
-    } else if model.contains("embed") {
-        RequestType::Embedding
-    } else {
-        RequestType::Chat
-    };
-    
-    // 估算 token 数
-    let token_count = estimate_token_count(request_json);
-    
-    RequestContext {
-        request_type,
+
+    crate::router::RequestContext {
         model,
         has_image,
         has_tools,
-        token_count,
-        priority: RequestPriority::Normal,
     }
 }
 
@@ -565,37 +601,19 @@ fn detect_image_content(value: &Value) -> bool {
         return arr.iter().any(detect_image_content);
     }
     if let Some(content_type) = value.get("type").and_then(Value::as_str) {
-        if content_type == "image_url" || content_type == "image" {
+        if content_type == "image_url" || content_type == "image" || content_type == "input_image" {
             return true;
         }
     }
     if let Some(content) = value.get("content") {
         if let Some(arr) = content.as_array() {
             return arr.iter().any(|item| {
-                item.get("type").and_then(Value::as_str) == Some("image_url")
+                let item_type = item.get("type").and_then(Value::as_str);
+                item_type == Some("image_url") || item_type == Some("input_image")
             });
         }
     }
     false
-}
-
-fn estimate_token_count(request_json: &Value) -> Option<u64> {
-    // 简单估算：将所有文本内容的字符数除以 4
-    let mut total_chars = 0u64;
-    
-    if let Some(messages) = request_json.get("messages").and_then(Value::as_array) {
-        for msg in messages {
-            if let Some(content) = msg.get("content").and_then(Value::as_str) {
-                total_chars += content.len() as u64;
-            }
-        }
-    }
-    
-    if total_chars > 0 {
-        Some(total_chars / 4)
-    } else {
-        None
-    }
 }
 
 /// 使用智能路由发起代理请求
@@ -615,7 +633,6 @@ pub async fn open_routed_proxy_request(body: &str) -> anyhow::Result<(UpstreamPr
             provider,
             target_model: context.model.clone(),
             rule_name: "default".to_string(),
-            strategy_used: crate::router::config::RoutingStrategy::Priority,
         }
     };
     
@@ -639,7 +656,7 @@ pub async fn open_routed_proxy_request(body: &str) -> anyhow::Result<(UpstreamPr
     }
     
     let upstream = reqwest::Client::new()
-        .post(chat_completions_url(&provider.base_url))
+        .post(chat_completions_url_with(&provider.base_url, provider.use_full_url))
         .bearer_auth(provider.api_key.trim())
         .header(reqwest::header::CONTENT_TYPE, "application/json")
         .json(&chat_request)
@@ -659,13 +676,21 @@ pub async fn open_routed_proxy_request(body: &str) -> anyhow::Result<(UpstreamPr
             status_code,
             is_stream: is_stream || content_type.contains("text/event-stream"),
             content_type,
-            response: upstream,
+            response: Some(upstream),
+            body: None,
         },
         decision.rule_name,
     ))
 }
 
 pub fn chat_completions_url(base_url: &str) -> String {
+    chat_completions_url_with(base_url, false)
+}
+
+pub fn chat_completions_url_with(base_url: &str, use_full_url: bool) -> String {
+    if use_full_url {
+        return base_url.trim().to_string();
+    }
     let skip_version_prefix = base_url.trim().ends_with('#');
     let base = base_url.trim().trim_end_matches('#').trim_end_matches('/');
     if base.to_ascii_lowercase().ends_with("/chat/completions") {
@@ -686,6 +711,13 @@ pub fn chat_completions_url(base_url: &str) -> String {
 }
 
 pub fn models_url(base_url: &str) -> String {
+    models_url_with(base_url, false)
+}
+
+pub fn models_url_with(base_url: &str, use_full_url: bool) -> String {
+    if use_full_url {
+        return base_url.trim().to_string();
+    }
     let skip_version_prefix = base_url.trim().ends_with('#');
     let mut base = base_url
         .trim()

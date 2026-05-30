@@ -727,7 +727,7 @@ async fn handle_models_proxy_connection(
     } else {
         upstream.content_type.clone()
     };
-    let body = upstream.response.bytes().await?.to_vec();
+    let body = if let Some(body) = upstream.body { body } else if let Some(response) = upstream.response { response.bytes().await?.to_vec() } else { Vec::new() };
     write_http_response(stream, &status, &content_type, &body).await?;
     log_helper_response(
         if is_success {
@@ -751,8 +751,8 @@ async fn handle_protocol_proxy_connection(
     path: &str,
     remote_addr_text: Option<String>,
 ) -> anyhow::Result<()> {
-    let upstream = match crate::protocol_proxy::open_responses_proxy_request(request_body).await {
-        Ok(upstream) => upstream,
+    let upstream = match crate::protocol_proxy::open_routed_proxy_request(request_body).await {
+        Ok((upstream, _rule_name)) => upstream,
         Err(error) => {
             let body = serde_json::to_vec(&serde_json::json!({
                 "status": "failed",
@@ -784,7 +784,7 @@ async fn handle_protocol_proxy_connection(
         } else {
             upstream.content_type.clone()
         };
-        let body = upstream.response.bytes().await?.to_vec();
+        let body = if let Some(body) = upstream.body { body } else if let Some(response) = upstream.response { response.bytes().await?.to_vec() } else { Vec::new() };
         write_http_response(stream, &status, &content_type, &body).await?;
         log_helper_response(
             "helper.protocol_proxy_upstream_error",
@@ -800,7 +800,7 @@ async fn handle_protocol_proxy_connection(
     if upstream.is_stream {
         write_http_stream_headers(stream, "200 OK", "text/event-stream; charset=utf-8").await?;
         let mut converter = crate::protocol_proxy::ChatSseToResponsesConverter::default();
-        let mut bytes_stream = upstream.response.bytes_stream();
+        let mut bytes_stream = upstream.response.ok_or_else(|| anyhow::anyhow!("missing response"))?.bytes_stream();
         let mut stream_failed = false;
 
         while let Some(chunk) = bytes_stream.next().await {
@@ -842,7 +842,7 @@ async fn handle_protocol_proxy_connection(
         return Ok(());
     }
 
-    let upstream_body = upstream.response.bytes().await?;
+    let upstream_body = upstream.response.ok_or_else(|| anyhow::anyhow!("missing response"))?.bytes().await?;
     let chat_json: serde_json::Value = serde_json::from_slice(&upstream_body)?;
     let response_json = crate::protocol_proxy::chat_completion_to_response(chat_json)?;
     let body = serde_json::to_vec(&response_json)?;

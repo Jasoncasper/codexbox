@@ -1,20 +1,18 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
-  Image,
+  ChevronDown,
+  ChevronRight,
   Network,
   Plus,
   Save,
-  TestTube,
   Trash2,
   RefreshCw,
   CheckCircle2,
   XCircle,
-  Settings,
-  Shield,
-  Zap,
-  DollarSign,
-  type LucideIcon,
+  Image,
+  Copy,
+  FlaskConical,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -25,7 +23,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 // Types
 type ProviderProtocol = "responses" | "chat_completions" | "anthropic" | "custom";
-type RoutingStrategy = "priority" | "round-robin" | "weighted" | "cost-optimized" | "latency-optimized" | "first-healthy";
 
 interface SmartProvider {
   id: string;
@@ -33,32 +30,15 @@ interface SmartProvider {
   base_url: string;
   api_key: string;
   protocol: ProviderProtocol;
-  priority: number;
-  weight: number;
   enabled: boolean;
   supports_vision: boolean;
-  vision_model: string;
-  tags: string[];
-  health_check: { enabled: boolean; interval_secs: number; timeout_secs: number; endpoint: string };
-  rate_limit: { requests_per_minute: number; tokens_per_minute: number };
-  cost: { input_cost_per_1k: number; output_cost_per_1k: number };
-}
-
-interface RoutingRule {
-  name: string;
-  description: string;
-  enabled: boolean;
-  priority: number;
-  conditions: Array<{ field: string; operator: string; value: any }>;
-  action: { type: string; target_providers?: string[]; strategy?: string; reason?: string; target_model?: string; provider_id?: string };
+  use_full_url: boolean;
 }
 
 interface SmartRouterConfig {
   providers: SmartProvider[];
-  rules: RoutingRule[];
-  strategy: RoutingStrategy;
+  vision_fallback_model: string;
   fallback: { enabled: boolean; max_retries: number; retry_delay_ms: number };
-  model_mappings: Array<{ source_model: string; target_model: string; provider_id: string; fallback_model?: string }>;
 }
 
 interface RoutingConfigPayload {
@@ -66,47 +46,19 @@ interface RoutingConfigPayload {
   config_path: string;
 }
 
-interface RouteTestPayload {
-  provider_id: string;
-  provider_name: string;
-  target_model: string;
-  rule_name: string;
-  strategy: string;
-}
-
 type Status = "ok" | "failed" | string;
 type CommandResult<T> = T & { status: Status; message: string };
-
-// Strategy labels
-const strategyLabels: Record<RoutingStrategy, string> = {
-  "priority": "优先级",
-  "round-robin": "轮询",
-  "weighted": "加权随机",
-  "cost-optimized": "成本最优",
-  "latency-optimized": "延迟最低",
-  "first-healthy": "首个健康",
-};
-
-const strategyIcons: Record<RoutingStrategy, LucideIcon> = {
-  "priority": Shield,
-  "round-robin": RefreshCw,
-  "weighted": Settings,
-  "cost-optimized": DollarSign,
-  "latency-optimized": Zap,
-  "first-healthy": CheckCircle2,
-};
 
 export default function RoutingPage() {
   const [config, setConfig] = useState<SmartRouterConfig | null>(null);
   const [configPath, setConfigPath] = useState("");
-  const [activeTab, setActiveTab] = useState("providers");
+  const [activeTab, setActiveTab] = useState("models");
   const [notice, setNotice] = useState<{ type: "ok" | "error"; text: string } | null>(null);
-  const [loading, setLoading] = useState(false);
 
-  // Test state
-  const [testModel, setTestModel] = useState("gpt-4o");
-  const [testHasImage, setTestHasImage] = useState(false);
-  const [testResult, setTestResult] = useState<RouteTestPayload | null>(null);
+  const [testingIndex, setTestingIndex] = useState<number | null>(null);
+  const [savingIndex, setSavingIndex] = useState<number | null>(null);
+  const [savingVision, setSavingVision] = useState(false);
+  const [expandedIndex, setExpandedIndex] = useState<number | null>(null);
 
   const loadConfig = useCallback(async () => {
     try {
@@ -124,58 +76,58 @@ export default function RoutingPage() {
     loadConfig();
   }, [loadConfig]);
 
-  const saveConfig = async () => {
-    if (!config) return;
-    setLoading(true);
-    try {
-      const result = await invoke<CommandResult<RoutingConfigPayload>>("save_routing_config", { config });
-      setNotice({ type: result.status === "ok" ? "ok" : "error", text: result.message });
-    } catch (e: any) {
-      setNotice({ type: "error", text: String(e) });
-    }
-    setLoading(false);
-  };
-
-  const testRouting = async () => {
-    if (!config) return;
-    setLoading(true);
-    try {
-      const result = await invoke<CommandResult<RouteTestPayload>>("test_routing_decision", {
-        config,
-        model: testModel,
-        hasImage: testHasImage,
-      });
-      setTestResult(result);
-      setNotice({ type: result.status === "ok" ? "ok" : "error", text: result.message });
-    } catch (e: any) {
-      setNotice({ type: "error", text: String(e) });
-    }
-    setLoading(false);
-  };
-
   const addProvider = () => {
     if (!config) return;
     const newProvider: SmartProvider = {
-      id: `provider-${Date.now()}`,
-      name: "新供应商",
+      id: "",
+      name: "新模型",
       base_url: "",
       api_key: "",
       protocol: "chat_completions",
-      priority: 100,
-      weight: 100,
       enabled: true,
       supports_vision: false,
-      vision_model: "",
-      tags: [],
-      health_check: { enabled: true, interval_secs: 60, timeout_secs: 5, endpoint: "/v1/models" },
-      rate_limit: { requests_per_minute: 60, tokens_per_minute: 100000 },
-      cost: { input_cost_per_1k: 0, output_cost_per_1k: 0 },
+      use_full_url: false,
     };
     setConfig({ ...config, providers: [...config.providers, newProvider] });
+    setExpandedIndex(config.providers.length);
   };
 
-  const removeProvider = (index: number) => {
+  const saveProvider = async (index: number) => {
     if (!config) return;
+    const provider = config.providers[index];
+    if (!provider.id.trim()) {
+      setNotice({ type: "error", text: "请先填写模型名称" });
+      return;
+    }
+    setSavingIndex(index);
+    try {
+      const result = await invoke<CommandResult<RoutingConfigPayload>>("upsert_provider", { provider });
+      setNotice({ type: result.status === "ok" ? "ok" : "error", text: result.message });
+      if (result.status === "ok") {
+        setConfig((result as any).config);
+        setConfigPath((result as any).config_path);
+      }
+    } catch (e: any) {
+      setNotice({ type: "error", text: String(e) });
+    }
+    setSavingIndex(null);
+  };
+
+  const removeProvider = async (index: number) => {
+    if (!config) return;
+    const providerId = config.providers[index].id;
+    if (providerId) {
+      try {
+        const result = await invoke<CommandResult<RoutingConfigPayload>>("delete_provider", { providerId });
+        if (result.status === "ok") {
+          setConfig((result as any).config);
+          setNotice({ type: "ok", text: "模型已删除" });
+          return;
+        }
+      } catch (e: any) {
+        setNotice({ type: "error", text: String(e) });
+      }
+    }
     setConfig({ ...config, providers: config.providers.filter((_, i) => i !== index) });
   };
 
@@ -186,23 +138,39 @@ export default function RoutingPage() {
     setConfig({ ...config, providers });
   };
 
-  const addRule = () => {
+  const copyProvider = (index: number) => {
     if (!config) return;
-    const newRule: RoutingRule = {
-      name: `rule-${Date.now()}`,
-      description: "",
-      enabled: true,
-      priority: 50,
-      conditions: [{ field: "request.model", operator: "contains", value: "" }],
-      action: { type: "route", target_providers: [], strategy: "priority" },
-    };
-    setConfig({ ...config, rules: [...config.rules, newRule] });
+    const source = config.providers[index];
+    const copy: SmartProvider = { ...source, id: "", name: `${source.name} (副本)` };
+    setConfig({ ...config, providers: [...config.providers, copy] });
   };
 
-  const removeRule = (index: number) => {
+  const testProvider = async (index: number) => {
     if (!config) return;
-    setConfig({ ...config, rules: config.rules.filter((_, i) => i !== index) });
+    const provider = config.providers[index];
+    setTestingIndex(index);
+    try {
+      const result = await invoke<CommandResult<any>>("test_smart_provider", { provider });
+      setNotice({ type: result.status === "ok" ? "ok" : "error", text: result.message });
+    } catch (e: any) {
+      setNotice({ type: "error", text: String(e) });
+    }
+    setTestingIndex(null);
   };
+
+  const saveVisionFallback = async () => {
+    if (!config) return;
+    setSavingVision(true);
+    try {
+      const result = await invoke<CommandResult<RoutingConfigPayload>>("save_routing_config", { config });
+      setNotice({ type: result.status === "ok" ? "ok" : "error", text: result.message });
+    } catch (e: any) {
+      setNotice({ type: "error", text: String(e) });
+    }
+    setSavingVision(false);
+  };
+
+  const visionModels = config?.providers.filter((p) => p.supports_vision) ?? [];
 
   if (!config) {
     return <div className="flex items-center justify-center h-64 text-muted-foreground">加载中...</div>;
@@ -218,15 +186,12 @@ export default function RoutingPage() {
             智能路由
           </h2>
           <p className="text-sm text-muted-foreground mt-1">
-            配置多供应商路由策略，支持按请求类型、模型、优先级智能分发
+            配置模型与 API 的映射关系，支持多模态回退路由
           </p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={loadConfig} disabled={loading}>
+          <Button variant="outline" onClick={loadConfig}>
             <RefreshCw className="h-4 w-4 mr-1" /> 刷新
-          </Button>
-          <Button onClick={saveConfig} disabled={loading}>
-            <Save className="h-4 w-4 mr-1" /> 保存配置
           </Button>
         </div>
       </div>
@@ -245,43 +210,81 @@ export default function RoutingPage() {
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList>
-          <TabsTrigger value="providers">供应商 ({config.providers.length})</TabsTrigger>
-          <TabsTrigger value="rules">规则 ({config.rules.length})</TabsTrigger>
-          <TabsTrigger value="test">路由测试</TabsTrigger>
+          <TabsTrigger value="models">模型 ({config.providers.length})</TabsTrigger>
+          <TabsTrigger value="vision">路由规则</TabsTrigger>
         </TabsList>
 
-        {/* Providers Tab */}
-        <TabsContent value="providers">
+        {/* Models Tab */}
+        <TabsContent value="models">
           <div className="space-y-4">
             <div className="flex justify-between items-center">
-              <h3 className="text-lg font-semibold">供应商列表</h3>
+              <h3 className="text-lg font-semibold">模型列表</h3>
               <Button size="sm" onClick={addProvider}>
-                <Plus className="h-4 w-4 mr-1" /> 添加供应商
+                <Plus className="h-4 w-4 mr-1" /> 添加模型
               </Button>
             </div>
 
-            {config.providers.map((provider, index) => (
-              <Card key={provider.id}>
-                <CardHeader className="pb-3">
+            {config.providers.map((provider, index) => {
+              const isExpanded = expandedIndex === index;
+              const isNew = !provider.id;
+              return (
+              <Card key={index} className={isNew ? "border-blue-300" : ""}>
+                <CardHeader
+                  className={`pb-3 cursor-pointer hover:bg-muted/30 rounded-t-lg ${isExpanded ? "" : "rounded-b-lg"}`}
+                  onClick={() => setExpandedIndex(isExpanded ? null : index)}
+                >
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
+                      {isExpanded ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
                       <CardTitle className="text-base">
-                        <Input
-                          value={provider.name}
-                          onChange={(e) => updateProvider(index, { name: e.target.value })}
-                          className="h-7 text-base font-semibold border-none p-0 w-auto"
-                        />
+                        {isExpanded ? (
+                          <Input
+                            value={provider.name}
+                            onChange={(e) => updateProvider(index, { name: e.target.value })}
+                            onClick={(e) => e.stopPropagation()}
+                            className="h-7 text-base font-semibold border-none p-0 w-auto"
+                          />
+                        ) : (
+                          <span>{provider.name}</span>
+                        )}
                       </CardTitle>
+                      <span className="text-xs text-muted-foreground">{provider.id}</span>
                       {provider.enabled ? (
                         <Badge variant="default" className="bg-green-100 text-green-800">启用</Badge>
                       ) : (
                         <Badge variant="secondary">禁用</Badge>
                       )}
-                      {provider.tags.map((tag) => (
-                        <Badge key={tag} variant="outline">{tag}</Badge>
-                      ))}
+                      {provider.supports_vision ? (
+                        <Badge variant="outline"><Image className="h-3 w-3 inline mr-1" />多模态</Badge>
+                      ) : null}
                     </div>
-                    <div className="flex gap-1">
+                    <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        title="保存模型"
+                        onClick={() => saveProvider(index)}
+                        disabled={savingIndex === index}
+                      >
+                        <Save className={`h-4 w-4 ${savingIndex === index ? "animate-spin" : ""}`} />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        title="测试连接"
+                        onClick={() => testProvider(index)}
+                        disabled={testingIndex === index}
+                      >
+                        <FlaskConical className={`h-4 w-4 ${testingIndex === index ? "animate-spin" : ""}`} />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        title="复制模型"
+                        onClick={() => copyProvider(index)}
+                      >
+                        <Copy className="h-4 w-4" />
+                      </Button>
                       <Button
                         variant="ghost"
                         size="sm"
@@ -295,10 +298,11 @@ export default function RoutingPage() {
                     </div>
                   </div>
                 </CardHeader>
+                {isExpanded && (
                 <CardContent className="space-y-3">
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <Label className="text-xs">ID</Label>
+                      <Label className="text-xs">模型名称</Label>
                       <Input
                         value={provider.id}
                         onChange={(e) => updateProvider(index, { id: e.target.value })}
@@ -336,197 +340,74 @@ export default function RoutingPage() {
                         className="h-8 text-sm"
                       />
                     </div>
-                    <div>
-                      <Label className="text-xs">优先级 (越小越优先)</Label>
-                      <Input
-                        type="number"
-                        value={provider.priority}
-                        onChange={(e) => updateProvider(index, { priority: Number(e.target.value) })}
-                        className="h-8 text-sm"
-                      />
-                    </div>
-                    <div>
-                      <Label className="text-xs">权重 (加权路由)</Label>
-                      <Input
-                        type="number"
-                        value={provider.weight}
-                        onChange={(e) => updateProvider(index, { weight: Number(e.target.value) })}
-                        className="h-8 text-sm"
-                      />
-                    </div>
                   </div>
-                  <div className="flex items-center gap-3">
-                    <label className="flex items-center gap-2 text-sm cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={provider.supports_vision}
-                        onChange={(e) => updateProvider(index, { supports_vision: e.target.checked })}
-                      />
-                      <Image className="h-4 w-4" /> 支持图片/视觉
-                    </label>
-                    {provider.supports_vision ? (
-                      <div className="flex-1">
-                        <Label className="text-xs">图片专用模型 (可选)</Label>
-                        <Input
-                          value={provider.vision_model}
-                          onChange={(e) => updateProvider(index, { vision_model: e.target.value })}
-                          placeholder="留空则用原模型，例如 gpt-4o"
-                          className="h-8 text-sm"
-                        />
-                      </div>
-                    ) : null}
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        </TabsContent>
-
-        {/* Rules Tab */}
-        <TabsContent value="rules">
-          <div className="space-y-4">
-            <div className="flex justify-between items-center">
-              <h3 className="text-lg font-semibold">路由规则</h3>
-              <div className="flex gap-2">
-                <Button size="sm" onClick={addRule}>
-                  <Plus className="h-4 w-4 mr-1" /> 添加规则
-                </Button>
-              </div>
-            </div>
-
-            {/* Default strategy */}
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-sm">默认策略</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="flex gap-2">
-                  {(Object.keys(strategyLabels) as RoutingStrategy[]).map((strategy) => {
-                    const Icon = strategyIcons[strategy];
-                    return (
-                      <button
-                        key={strategy}
-                        className={`flex items-center gap-1 px-3 py-1.5 text-xs rounded-md border transition-colors ${
-                          config.strategy === strategy ? "bg-primary text-primary-foreground border-primary" : "hover:bg-muted"
-                        }`}
-                        onClick={() => setConfig({ ...config, strategy })}
-                      >
-                        <Icon className="h-3 w-3" />
-                        {strategyLabels[strategy]}
-                      </button>
-                    );
-                  })}
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Rules list */}
-            {config.rules.map((rule, index) => (
-              <Card key={rule.name}>
-                <CardHeader className="pb-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <CardTitle className="text-sm">
-                        <Input
-                          value={rule.name}
-                          onChange={(e) => {
-                            const rules = [...config.rules];
-                            rules[index] = { ...rules[index], name: e.target.value };
-                            setConfig({ ...config, rules });
-                          }}
-                          className="h-6 text-sm font-semibold border-none p-0 w-auto"
-                        />
-                      </CardTitle>
-                      {rule.enabled ? (
-                        <Badge variant="default" className="bg-green-100 text-green-800">启用</Badge>
-                      ) : (
-                        <Badge variant="secondary">禁用</Badge>
-                      )}
-                      <Badge variant="outline">优先级: {rule.priority}</Badge>
-                    </div>
-                    <div className="flex gap-1">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => {
-                          const rules = [...config.rules];
-                          rules[index] = { ...rules[index], enabled: !rules[index].enabled };
-                          setConfig({ ...config, rules });
-                        }}
-                      >
-                        {rule.enabled ? <XCircle className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}
-                      </Button>
-                      <Button variant="ghost" size="sm" onClick={() => removeRule(index)}>
-                        <Trash2 className="h-4 w-4 text-destructive" />
-                      </Button>
-                    </div>
-                  </div>
-                  <CardDescription>{rule.description || "无描述"}</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-2">
-                  <div className="text-xs text-muted-foreground">
-                    条件: {rule.conditions.map((c) => `${c.field} ${c.operator} ${JSON.stringify(c.value)}`).join(" AND ")}
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    动作: {rule.action.type === "route" 
-                      ? `路由到 [${rule.action.target_providers?.join(", ")}] 策略: ${rule.action.strategy}`
-                      : rule.action.type === "reject"
-                      ? `拒绝: ${rule.action.reason}`
-                      : `重写模型: ${rule.action.target_model} -> ${rule.action.provider_id}`}
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        </TabsContent>
-
-        {/* Test Tab */}
-        <TabsContent value="test">
-          <div className="space-y-4">
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <TestTube className="h-5 w-5" /> 路由测试
-                </CardTitle>
-                <CardDescription>测试路由决策，验证规则是否按预期工作</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label>模型名</Label>
-                    <Input
-                      value={testModel}
-                      onChange={(e) => setTestModel(e.target.value)}
-                      placeholder="gpt-4o"
+                  <label className="flex items-center gap-2 text-sm cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={provider.supports_vision}
+                      onChange={(e) => updateProvider(index, { supports_vision: e.target.checked })}
                     />
-                  </div>
-                  <div className="flex items-end">
-                    <label className="flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        checked={testHasImage}
-                        onChange={(e) => setTestHasImage(e.target.checked)}
-                      />
-                      <span className="text-sm">包含图片</span>
-                    </label>
-                  </div>
-                </div>
-                <Button onClick={testRouting} disabled={loading}>
-                  <TestTube className="h-4 w-4 mr-1" /> 测试路由
-                </Button>
-
-                {testResult && (
-                  <div className="p-4 bg-muted rounded-lg space-y-2">
-                    <div className="text-sm"><strong>选中供应商:</strong> {testResult.provider_name} ({testResult.provider_id})</div>
-                    <div className="text-sm"><strong>目标模型:</strong> {testResult.target_model}</div>
-                    <div className="text-sm"><strong>匹配规则:</strong> {testResult.rule_name}</div>
-                    <div className="text-sm"><strong>使用策略:</strong> {testResult.strategy}</div>
-                  </div>
+                    <Image className="h-4 w-4" /> 支持多模态理解（图片/视觉）
+                  </label>
+                  <label className="flex items-center gap-2 text-sm cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={provider.use_full_url}
+                      onChange={(e) => updateProvider(index, { use_full_url: e.target.checked })}
+                    />
+                    使用完整 URL（不自动拼接 /chat/completions、/v1 等路径）
+                  </label>
+                </CardContent>
                 )}
-              </CardContent>
-            </Card>
+              </Card>
+              );
+            })}
           </div>
         </TabsContent>
+
+        {/* Vision Fallback Tab */}
+        <TabsContent value="vision">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <Image className="h-5 w-5" /> 路由规则
+              </CardTitle>
+              <CardDescription>
+                配置图片/视觉消息的路由规则：当选中模型不支持多模态时，自动回退到指定模型
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {visionModels.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  暂无支持多模态的模型。请先在"模型"标签中为模型勾选"支持多模态理解"。
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  <Label>回退模型</Label>
+                  <select
+                    value={config.vision_fallback_model}
+                    onChange={(e) => setConfig({ ...config, vision_fallback_model: e.target.value })}
+                    className="w-full h-9 text-sm border rounded-md px-2 bg-background"
+                  >
+                    <option value="">不启用回退</option>
+                    {visionModels.map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.name} ({m.id})
+                      </option>
+                    ))}
+                  </select>
+                  <Button size="sm" onClick={saveVisionFallback} disabled={savingVision} className="mt-2">
+                    <Save className="h-4 w-4 mr-1" /> 保存规则
+                  </Button>
+                  <p className="text-xs text-muted-foreground mt-2">
+                    选择后，当请求包含图片但匹配的模型不支持多模态时，自动改用此模型处理
+                  </p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
       </Tabs>
     </div>
   );

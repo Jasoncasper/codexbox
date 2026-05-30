@@ -1144,6 +1144,74 @@ body {
   transform: translateX(12px);
 }
 
+.context-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.context-tab {
+  padding: 6px 14px;
+  border-radius: 6px;
+  border: 1px solid hsl(var(--border));
+  background: transparent;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  color: hsl(var(--muted-foreground));
+}
+
+.context-tab:hover {
+  border-color: hsl(var(--primary) / 0.4);
+  color: hsl(var(--foreground));
+}
+
+.context-tab.active {
+  border-color: hsl(var(--primary));
+  background: hsl(var(--primary) / 0.15);
+  color: hsl(var(--primary));
+}
+
+.context-list {
+  display: grid;
+  gap: 8px;
+}
+
+.context-entry-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  border: 1px solid hsl(var(--border));
+  border-radius: 8px;
+  background: hsl(var(--secondary) / 0.18);
+  padding: 8px;
+  transition:
+    border-color var(--motion-normal) var(--motion-ease),
+    background-color var(--motion-normal) var(--motion-ease),
+    box-shadow var(--motion-normal) var(--motion-ease),
+    transform var(--motion-normal) var(--motion-ease);
+}
+
+.context-entry-row:hover {
+  border-color: hsl(var(--primary) / 0.32);
+  background: hsl(var(--secondary) / 0.28);
+  transform: translateY(-1px);
+}
+
+.context-entry-info {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow: hidden;
+}
+
+.context-entry-actions {
+  display: flex;
+  gap: 4px;
+}
+
 .relay-context-delete {
   color: hsl(var(--destructive, 0 84% 60%));
 }

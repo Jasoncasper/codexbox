@@ -16,7 +16,7 @@ fn windows_entrypoint_plan_contains_silent_and_manager_entrypoints() {
     let plan = build_windows_entrypoint_plan(&options);
 
     assert!(plan.silent_shortcut.ends_with("CodexBox.lnk"));
-    assert!(plan.manager_shortcut.ends_with("CodexBox 管理工具.lnk"));
+    assert!(plan.manager_shortcut.ends_with("CodexBox.lnk"));
     assert_eq!(plan.launcher_path, "C:/Tools/codexbox.exe");
     assert_eq!(plan.manager_path, "C:/Tools/codexbox-manager.exe");
     assert_eq!(plan.silent_icon_path, "C:/Tools/codexbox.exe");
@@ -40,7 +40,7 @@ fn windows_entrypoint_plan_can_request_owned_data_removal_without_shell_script()
     let plan = build_windows_entrypoint_plan(&options);
 
     assert!(plan.silent_shortcut.ends_with("CodexBox.lnk"));
-    assert!(plan.manager_shortcut.ends_with("CodexBox 管理工具.lnk"));
+    assert!(plan.manager_shortcut.ends_with("CodexBox.lnk"));
     assert!(plan.remove_owned_data);
 }
 
@@ -48,7 +48,7 @@ fn windows_entrypoint_plan_can_request_owned_data_removal_without_shell_script()
 fn macos_bundle_metadata_contains_silent_and_manager_apps() {
     let options = InstallOptions {
         install_root: Some("/Applications".into()),
-        launcher_path: Some("/opt/CodexBox/codexbox".into()),
+        launcher_path: Some("/opt/CodexBox/codexbox-manager".into()),
         manager_path: Some("/opt/CodexBox/codexbox-manager".into()),
         remove_owned_data: false,
     };
@@ -57,40 +57,30 @@ fn macos_bundle_metadata_contains_silent_and_manager_apps() {
     let manager = build_macos_app_bundle(&options, true);
 
     assert!(silent.app_path.ends_with("CodexBox.app"));
-    assert!(manager.app_path.ends_with("CodexBox 管理工具.app"));
-    assert!(silent.info_plist.contains("<string>CodexBox</string>"));
-    assert!(
-        manager
-            .info_plist
-            .contains("<string>CodexBox 管理工具</string>")
-    );
-    assert!(silent.launch_script.contains("codexbox"));
+    assert!(manager.app_path.ends_with("CodexBox.app"));
+    assert!(silent.info_plist.contains("<string>codexbox-manager</string>"));
+    assert!(manager.info_plist.contains("<string>codexbox-manager</string>"));
+    assert!(silent.launch_script.contains("codexbox-manager"));
     assert!(manager.launch_script.contains("codexbox-manager"));
 }
 
 #[test]
 fn installer_exports_expected_two_entrypoint_names() {
-    assert_eq!(shortcut_names(), ("CodexBox.lnk", "CodexBox 管理工具.lnk"));
-    assert_eq!(app_bundle_names(), ("CodexBox.app", "CodexBox 管理工具.app"));
+    assert_eq!(shortcut_names(), ("CodexBox.lnk", "CodexBox.lnk"));
+    assert_eq!(app_bundle_names(), ("CodexBox.app", "CodexBox.app"));
 }
 
 #[test]
 fn companion_binary_path_resolves_macos_silent_app_next_to_manager_app() {
     let manager_exe = std::path::Path::new(
-        "/Applications/CodexBox 管理工具.app/Contents/MacOS/CodexBoxManager",
+        "/Applications/CodexBox.app/Contents/MacOS/codexbox-manager",
     );
 
     let companion = companion_binary_path_from_exe(manager_exe, SILENT_BINARY);
 
     assert_eq!(
         companion,
-        std::path::PathBuf::from("/Applications/CodexBox.app/Contents/MacOS/CodexBox")
-    );
-    assert_ne!(
-        companion,
-        std::path::PathBuf::from(
-            "/Applications/CodexBox 管理工具.app/Contents/MacOS/codexbox"
-        )
+        std::path::PathBuf::from("/Applications/CodexBox.app/Contents/MacOS/codexbox-manager")
     );
 }
 

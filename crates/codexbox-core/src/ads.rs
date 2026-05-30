@@ -2,8 +2,8 @@ use serde_json::{Value, json};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 pub const DEFAULT_AD_LIST_URLS: [&str; 2] = [
-    "https://raw.githubusercontent.com/BigPizzaV3/Ad-List/main/ads.json",
-    "https://cdn.jsdelivr.net/gh/BigPizzaV3/Ad-List@main/ads.json",
+    "https://raw.githubusercontent.com/Jasoncasper/Ad-List/main/ads.json",
+    "https://cdn.jsdelivr.net/gh/Jasoncasper/Ad-List@main/ads.json",
 ];
 
 pub fn normalize_ad_payload(payload: Value) -> Value {

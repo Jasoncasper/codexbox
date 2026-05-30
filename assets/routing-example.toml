@@ -1,133 +1,58 @@
-# CodexRouter 智能路由配置示例
-
-[strategy]
-default = "priority"
+# CodexBox 路由配置示例
 
 [fallback]
 enabled = true
 max_retries = 3
 retry_delay_ms = 1000
 
-[fallback.circuit_breaker]
-enabled = true
-failure_threshold = 5
-recovery_timeout_secs = 30
+# 多模态回退：当选中模型不支持图片时，自动路由到此模型
+vision_fallback_model = "gpt-4o"
 
-# ===== 供应商配置 =====
+# ===== 模型配置 =====
 
 [[providers]]
-id = "openai-official"
-name = "OpenAI 官方"
+id = "gpt-4o"
+name = "GPT-4o"
 base_url = "https://api.openai.com/v1"
 api_key = "sk-your-key-here"
 protocol = "chat_completions"
-priority = 100
-weight = 100
 enabled = true
-tags = ["official", "reliable"]
-
-[providers.health_check]
-enabled = true
-interval_secs = 60
-timeout_secs = 5
-endpoint = "/v1/models"
-
-[providers.rate_limit]
-requests_per_minute = 60
-tokens_per_minute = 100000
-
-[providers.cost]
-input_cost_per_1k = 0.005
-output_cost_per_1k = 0.015
+supports_vision = true
+# target_model = "gpt-4o"  # 上游模型名，为空则用 id
 
 [[providers]]
-id = "relay-cheap"
-name = "中转站 A (便宜)"
-base_url = "https://relay-a.example.com/v1"
-api_key = "relay-key-a"
+id = "gpt-4o-mini"
+name = "GPT-4o Mini"
+base_url = "https://api.openai.com/v1"
+api_key = "sk-your-key-here"
 protocol = "chat_completions"
-priority = 80
-weight = 60
 enabled = true
-tags = ["cheap", "image"]
-
-[providers.health_check]
-enabled = true
-interval_secs = 120
-timeout_secs = 10
-endpoint = "/v1/models"
-
-[providers.cost]
-input_cost_per_1k = 0.001
-output_cost_per_1k = 0.003
+supports_vision = true
 
 [[providers]]
-id = "relay-fast"
-name = "中转站 B (快速)"
-base_url = "https://relay-b.example.com/v1"
-api_key = "relay-key-b"
+id = "gpt-3.5-turbo"
+name = "GPT-3.5 Turbo"
+base_url = "https://relay.example.com/v1"
+api_key = "relay-key"
 protocol = "chat_completions"
-priority = 90
-weight = 80
 enabled = true
-tags = ["fast", "code"]
+supports_vision = false
 
-[providers.cost]
-input_cost_per_1k = 0.003
-output_cost_per_1k = 0.008
-
-# ===== 路由规则 =====
-
-[[rules]]
-name = "image-routing"
-description = "图片请求走便宜供应商"
+[[providers]]
+id = "claude-3-opus"
+name = "Claude 3 Opus"
+base_url = "https://api.anthropic.com"
+api_key = "sk-ant-key"
+protocol = "anthropic"
 enabled = true
-priority = 10
-conditions = [
-  { field = "request.has_image", operator = "equals", value = true }
-]
-action = { type = "route", target_providers = ["relay-cheap", "openai-official"], strategy = "weighted" }
+supports_vision = true
 
-[[rules]]
-name = "code-routing"
-description = "代码请求走快速供应商"
+[[providers]]
+id = "deepseek-v4"
+name = "DeepSeek V4"
+base_url = "https://api.deepseek.com"
+api_key = "sk-your-key"
+protocol = "chat_completions"
 enabled = true
-priority = 20
-conditions = [
-  { field = "request.model", operator = "contains", value = "code" }
-]
-action = { type = "route", target_providers = ["relay-fast", "openai-official"], strategy = "priority" }
-
-[[rules]]
-name = "gpt4-routing"
-description = "GPT-4 系列走官方"
-enabled = true
-priority = 30
-conditions = [
-  { field = "request.model", operator = "starts_with", value = "gpt-4" }
-]
-action = { type = "route", target_providers = ["openai-official"], strategy = "first_healthy" }
-
-[[rules]]
-name = "cost-optimization"
-description = "低优先级请求走便宜供应商"
-enabled = false
-priority = 40
-conditions = [
-  { field = "request.priority", operator = "equals", value = "low" },
-  { field = "request.token_count", operator = "greater_than", value = 1000 }
-]
-action = { type = "route", target_providers = ["relay-cheap"], strategy = "cost_optimized" }
-
-# ===== 模型映射 =====
-
-[[model_mappings]]
-source_model = "gpt-4o"
-target_model = "gpt-4o-2024-08-06"
-provider_id = "relay-cheap"
-fallback_model = "gpt-4o-mini"
-
-[[model_mappings]]
-source_model = "claude-3-opus"
-target_model = "claude-3-opus-20240229"
-provider_id = "relay-fast"
+supports_vision = false
+target_model = "deepseek-chat"  # DeepSeek API 只认 deepseek-chat

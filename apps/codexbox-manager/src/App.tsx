@@ -31,7 +31,6 @@ import {
   KeyRound,
   LayoutDashboard,
   Link2,
-  MessageCircle,
   FileCode2,
   Moon,
   Network,
@@ -1043,8 +1042,8 @@ function EnhanceScreen({
             <FeatureItem title="Markdown 导出" detail="按本地 rollout 导出带时间戳的 Markdown。" enabled={form.enhancementsEnabled} />
             <FeatureItem title="项目移动" detail="把会话移动到普通对话或其他本地项目。" enabled={form.enhancementsEnabled} />
             <FeatureItem title="Timeline" detail="在对话右侧显示用户提问时间线。" enabled={form.enhancementsEnabled} />
-            <FeatureItem title="插件入口解锁" detail="仅增强模式启用。" enabled={form.enhancementsEnabled} />
-            <FeatureItem title="特殊插件强制安装" detail="仅增强模式启用。" enabled={form.enhancementsEnabled} />
+            <FeatureItem title="插件入口解锁" detail="需要启用页面增强。" enabled={form.enhancementsEnabled} />
+            <FeatureItem title="特殊插件强制安装" detail="需要启用页面增强。" enabled={form.enhancementsEnabled} />
           </div>
           <Toolbar>
             <Button onClick={() => void actions.saveSettings()}>保存增强设置</Button>
@@ -1141,8 +1140,7 @@ function MaintenanceScreen({
         <CardContent>
           <div className="status-table">
             <StatusRow title="Codex 应用" status={overview?.codex_app.status} path={overview?.codex_app.path} />
-            <StatusRow title="静默启动入口" status={overview?.silent_shortcut.status} path={overview?.silent_shortcut.path} />
-            <StatusRow title="管理控制台入口" status={overview?.management_shortcut.status} path={overview?.management_shortcut.path} />
+            <StatusRow title="CodexBox 入口" status={overview?.silent_shortcut.status} path={overview?.silent_shortcut.path} />
             <StatusRow title="Watcher 自动接管" status={watcher?.enabled ? "ok" : "disabled"} path={watcher?.disabled_flag} />
           </div>
           <Toolbar>
@@ -1265,10 +1263,6 @@ function AboutScreen({
             <Button onClick={() => void actions.openExternalUrl("https://github.com/Jasoncasper/codexbox/issues")} variant="secondary">
               <ExternalLink className="h-4 w-4" />
               反馈问题
-            </Button>
-            <Button onClick={() => void actions.openExternalUrl("https://discord.gg/y96kX7A76v")} variant="secondary">
-              <MessageCircle className="h-4 w-4" />
-              Discord
             </Button>
           </Toolbar>
         </CardContent>
@@ -1805,7 +1799,7 @@ function routeTitle(route: Route) {
 function routeSubtitle(route: Route) {
   const subtitles: Record<Route, string> = {
     overview: "检查问题、启动与快速修复",
-    routing: "智能路由、多供应商策略与健康检查",
+    routing: "模型与 API 映射、多模态回退",
     context: "独立管理 MCP、Skills、Plugins",
     enhance: "会话删除、导出、项目移动和脚本能力",
     userScripts: "内置和用户自定义脚本清单",
@@ -2321,12 +2315,6 @@ function healthItems(overview: OverviewResult | null) {
       status: overview?.silent_shortcut.status ?? "not_checked",
       ok: overview?.silent_shortcut.status === "installed",
       detail: overview?.silent_shortcut.path || "缺少 CodexBox 静默启动快捷方式时可在安装维护页修复。",
-    },
-    {
-      title: "管理工具入口",
-      status: overview?.management_shortcut.status ?? "not_checked",
-      ok: overview?.management_shortcut.status === "installed",
-      detail: overview?.management_shortcut.path || "缺少管理工具快捷方式时可在安装维护页修复。",
     },
   ];
 }

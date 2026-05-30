@@ -6,8 +6,8 @@ pub mod macos;
 pub mod windows;
 
 pub const SILENT_NAME: &str = "CodexBox";
-pub const MANAGER_NAME: &str = "CodexBox 管理工具";
-pub const SILENT_BINARY: &str = "codexbox";
+pub const MANAGER_NAME: &str = "CodexBox";
+pub const SILENT_BINARY: &str = "codexbox-manager";
 pub const MANAGER_BINARY: &str = "codexbox-manager";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -70,11 +70,11 @@ impl ShortcutState {
 }
 
 pub fn shortcut_names() -> (&'static str, &'static str) {
-    ("CodexBox.lnk", "CodexBox 管理工具.lnk")
+    ("CodexBox.lnk", "CodexBox.lnk")
 }
 
 pub fn app_bundle_names() -> (&'static str, &'static str) {
-    ("CodexBox.app", "CodexBox 管理工具.app")
+    ("CodexBox.app", "CodexBox.app")
 }
 
 pub fn inspect_entrypoints() -> EntryPointState {
@@ -250,7 +250,7 @@ fn macos_silent_app_binary_from_exe(exe: &Path) -> Option<PathBuf> {
             .join(format!("{SILENT_NAME}.app"))
             .join("Contents")
             .join("MacOS")
-            .join("CodexBox")
+            .join(SILENT_BINARY)
     })
 }
 
