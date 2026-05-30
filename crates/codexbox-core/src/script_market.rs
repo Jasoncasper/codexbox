@@ -1,6 +1,7 @@
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 
 use crate::user_scripts::UserScriptManager;
 
@@ -57,6 +58,7 @@ pub fn parse_market_manifest(raw: Value) -> anyhow::Result<ScriptMarketManifest>
 }
 
 pub async fn fetch_market_manifest(url: &str) -> anyhow::Result<ScriptMarketManifest> {
+    validate_script_url(url)?;
     let raw = reqwest::get(url)
         .await
         .with_context(|| format!("failed to request script market index {url}"))?
@@ -68,7 +70,21 @@ pub async fn fetch_market_manifest(url: &str) -> anyhow::Result<ScriptMarketMani
     parse_market_manifest(raw)
 }
 
+fn validate_script_url(url: &str) -> anyhow::Result<()> {
+    let url = url.trim().to_ascii_lowercase();
+    if !url.starts_with("https://") {
+        anyhow::bail!("脚本下载必须使用 HTTPS");
+    }
+    for blocked in &["127.0.0.1", "localhost", "::1", "0.0.0.0", "169.254", "10.", "172.16.", "192.168."] {
+        if url.contains(blocked) {
+            anyhow::bail!("不允许下载私有网络地址的脚本");
+        }
+    }
+    Ok(())
+}
+
 pub async fn download_script(url: &str) -> anyhow::Result<Vec<u8>> {
+    validate_script_url(url)?;
     Ok(reqwest::get(url)
         .await
         .with_context(|| format!("failed to request script {url}"))?
@@ -85,6 +101,18 @@ pub fn install_market_script_content(
     script: &MarketScript,
     content: &[u8],
 ) -> anyhow::Result<()> {
+    if !script.sha256.is_empty() {
+        let expected = script.sha256.trim().to_ascii_lowercase();
+        let actual = format!("{:x}", Sha256::digest(content));
+        if actual != expected {
+            anyhow::bail!(
+                "脚本 {} SHA-256 校验失败: 期望 {}, 实际 {}",
+                script.id,
+                expected,
+                actual
+            );
+        }
+    }
     let path = manager.user_script_path_for_market_id(&script.id);
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).with_context(|| {

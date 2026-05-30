@@ -47,6 +47,46 @@ pub fn validate_base_branch(base_branch: &str) -> UpstreamWorktreeResult<()> {
     })
 }
 
+pub fn validate_worktree_path(path: &str) -> UpstreamWorktreeResult<()> {
+    let trimmed = path.trim();
+    if trimmed.is_empty() {
+        return Err(UpstreamWorktreeError::new(
+            UpstreamWorktreeCode::PathExists,
+            "Worktree path is required",
+        ));
+    }
+    if trimmed.starts_with('/') || trimmed.starts_with('-') {
+        return Err(UpstreamWorktreeError::new(
+            UpstreamWorktreeCode::PathExists,
+            "Worktree path must be relative and cannot start with / or -",
+        ));
+    }
+    for component in Path::new(trimmed).components() {
+        match component {
+            std::path::Component::ParentDir => {
+                return Err(UpstreamWorktreeError::new(
+                    UpstreamWorktreeCode::PathExists,
+                    "Worktree path contains prohibited '..'",
+                ));
+            }
+            std::path::Component::Prefix(_) | std::path::Component::RootDir => {
+                return Err(UpstreamWorktreeError::new(
+                    UpstreamWorktreeCode::PathExists,
+                    "Worktree path must be relative",
+                ));
+            }
+            _ => {}
+        }
+    }
+    if trimmed.contains('\\') || trimmed.contains('\0') {
+        return Err(UpstreamWorktreeError::new(
+            UpstreamWorktreeCode::PathExists,
+            "Worktree path contains invalid characters",
+        ));
+    }
+    Ok(())
+}
+
 pub fn source_ref(remote: &str, base_branch: &str) -> String {
     format!("{}/{}", remote.trim(), base_branch.trim())
 }
@@ -84,12 +124,13 @@ pub(crate) fn request_from_payload(
             "Repository path is required",
         ));
     }
-    if worktree_path.is_empty() {
+    if repo_path.starts_with('-') || repo_path.contains('\0') {
         return Err(UpstreamWorktreeError::new(
-            UpstreamWorktreeCode::PathExists,
-            "Worktree path is required",
+            UpstreamWorktreeCode::NotGitRepo,
+            "Repository path contains invalid characters",
         ));
     }
+    validate_worktree_path(&worktree_path)?;
 
     validate_branch_name(&branch_name)?;
     validate_base_branch(&base_branch)?;

@@ -1,6 +1,6 @@
 //! 路由配置结构定义
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, Serializer};
 
 /// 智能路由全局配置
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -34,7 +34,8 @@ pub struct SmartProvider {
     pub name: String,
     /// API 基础地址
     pub base_url: String,
-    /// API 密钥
+    /// API 密钥（序列化自动脱敏，仅保留首尾各4位）
+    #[serde(serialize_with = "mask_api_key")]
     pub api_key: String,
     /// 协议类型
     #[serde(default)]
@@ -120,5 +121,19 @@ impl Default for RequestContext {
             has_image: false,
             has_tools: false,
         }
+    }
+}
+
+fn mask_api_key<S: Serializer>(key: &str, serializer: S) -> Result<S::Ok, S::Error> {
+    serializer.serialize_str(&api_key_masked_str(key))
+}
+
+pub fn api_key_masked_str(key: &str) -> String {
+    if key.is_empty() {
+        String::new()
+    } else if key.len() <= 8 {
+        "****".to_string()
+    } else {
+        format!("{}...{}", &key[..4], &key[key.len()-4..])
     }
 }

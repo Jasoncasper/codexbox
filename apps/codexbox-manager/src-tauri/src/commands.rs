@@ -1230,8 +1230,20 @@ pub fn load_routing_config() -> CommandResult<RoutingConfigPayload> {
 }
 
 #[tauri::command]
-pub fn save_routing_config(config: codexbox_core::router::SmartRouterConfig) -> CommandResult<RoutingConfigPayload> {
+pub fn save_routing_config(mut config: codexbox_core::router::SmartRouterConfig) -> CommandResult<RoutingConfigPayload> {
     let config_path = codexbox_core::paths::default_app_state_dir().join("routing.toml");
+    // 保持原有 API key（前端可能发回的是脱敏值）
+    if let Ok(old_raw) = std::fs::read_to_string(&config_path) {
+        if let Ok(old_config) = toml::from_str::<codexbox_core::router::SmartRouterConfig>(&old_raw) {
+            for provider in &mut config.providers {
+                if let Some(old) = old_config.providers.iter().find(|p| p.id == provider.id) {
+                    if provider.api_key == codexbox_core::router::api_key_masked_str(&old.api_key) {
+                        provider.api_key = old.api_key.clone();
+                    }
+                }
+            }
+        }
+    }
     if let Some(parent) = config_path.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
@@ -1286,7 +1298,7 @@ pub async fn test_routing_decision(
 }
 
 #[tauri::command]
-pub fn upsert_provider(provider: codexbox_core::router::SmartProvider) -> CommandResult<RoutingConfigPayload> {
+pub fn upsert_provider(mut provider: codexbox_core::router::SmartProvider) -> CommandResult<RoutingConfigPayload> {
     let config_path = codexbox_core::paths::default_app_state_dir().join("routing.toml");
     let mut config: codexbox_core::router::SmartRouterConfig = if config_path.exists() {
         std::fs::read_to_string(&config_path)
@@ -1297,6 +1309,13 @@ pub fn upsert_provider(provider: codexbox_core::router::SmartProvider) -> Comman
         codexbox_core::router::SmartRouterConfig::default()
     };
     if let Some(existing) = config.providers.iter_mut().find(|p| p.id == provider.id) {
+        // 保持原有 API key（前端可能发回的是脱敏值）
+        let incoming_key = std::mem::replace(&mut provider.api_key, String::new());
+        if incoming_key == codexbox_core::router::api_key_masked_str(&existing.api_key) {
+            provider.api_key = existing.api_key.clone();
+        } else {
+            provider.api_key = incoming_key;
+        }
         *existing = provider;
     } else {
         config.providers.push(provider);
