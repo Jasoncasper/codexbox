@@ -1386,8 +1386,19 @@ pub fn delete_provider(provider_id: String) -> CommandResult<RoutingConfigPayloa
 }
 
 #[tauri::command]
-pub async fn test_smart_provider(provider: codexbox_core::router::SmartProvider) -> CommandResult<RelayProfileTestPayload> {
+pub async fn test_smart_provider(mut provider: codexbox_core::router::SmartProvider) -> CommandResult<RelayProfileTestPayload> {
     let base_url = provider.base_url.trim().to_string();
+    // 如果前端传来的是脱敏 key，从磁盘配置恢复真实 key
+    let config_path_ref = codexbox_core::paths::default_app_state_dir().join("routing.toml");
+    if let Ok(raw) = std::fs::read_to_string(&config_path_ref) {
+        if let Ok(stored) = toml::from_str::<codexbox_core::router::SmartRouterConfig>(&raw) {
+            if let Some(existing) = stored.providers.iter().find(|p| p.id == provider.id) {
+                if provider.api_key == codexbox_core::router::api_key_masked_str(&existing.api_key) {
+                    provider.api_key = existing.api_key.clone();
+                }
+            }
+        }
+    }
     let api_key = provider.api_key.trim().to_string();
     if base_url.is_empty() {
         return CommandResult {

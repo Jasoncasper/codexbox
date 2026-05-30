@@ -358,7 +358,7 @@ dependencies = [
 
 [[package]]
 name = "codexbox-core"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -383,7 +383,7 @@ dependencies = [
 
 [[package]]
 name = "codexbox-data"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -399,7 +399,7 @@ dependencies = [
 
 [[package]]
 name = "codexbox-launcher"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -413,7 +413,7 @@ dependencies = [
 
 [[package]]
 name = "codexbox-manager"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "anyhow",
  "async-trait",
