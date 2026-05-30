@@ -782,7 +782,7 @@ export function App() {
     <div className={`shell ${theme}`}>
       <aside className="sidebar">
         <div className="brand">
-          <div className="brand-mark">C++</div>
+          <div className="brand-mark">CB</div>
           <div className="brand-copy">
             <div className="brand-title-row">
               <div className="brand-title">CodexBox</div>

@@ -260,8 +260,7 @@ fn platform_asset_rank(name: &str) -> u8 {
 }
 
 fn is_windows_installer_asset(name: &str) -> bool {
-    name.contains("codex")
-        && name.contains("plus")
+    name.contains("codexbox")
         && (name.ends_with(".msi")
             || name.ends_with("-setup.exe")
             || name.ends_with("_setup.exe")
@@ -270,7 +269,7 @@ fn is_windows_installer_asset(name: &str) -> bool {
 }
 
 fn is_macos_installer_asset(name: &str) -> bool {
-    name.contains("codex") && name.contains("plus") && name.ends_with(".dmg")
+    name.contains("codexbox") && name.ends_with(".dmg")
 }
 
 pub fn launch_installer(path: &Path) -> anyhow::Result<()> {
